@@ -10,12 +10,14 @@
 - [x] Avoid public disclosure of physical BLE address and serial number.
 - [ ] Independently validate all documented behavior on more than one A2854.
 
-## Phase 1 — Windows capability proof [not started]
+## Phase 1 — Windows capability proof [in progress]
 
-- [ ] Return Intel AX200 from USB/IP to Windows, confirm normal Bluetooth works.
-- [~] A2854 reportedly pairs in Windows and briefly shows battery level, then disconnects; Windows name begins `DL1` (suffix not recorded). Physical GATT/HID access remains unknown.
+- [x] Return Intel AX200 from USB/IP to Windows (`Not shared` / Windows PnP `OK` confirmed by user).
+- [~] A2854 is paired in Windows, briefly displayed battery level, then disconnected; WinRT paired enumeration confirms its `DL1…` name. Physical GATT/HID access remains unknown.
 - [x] Add a [paired-device WinRT GATT probe](../../tools/windows-probe/GATT_DIAGNOSTICS.md) to distinguish service visibility, `0x1812` access, and GATT errors (code only).
-- [ ] Run WinRT GATT diagnostics on the paired A2854 and capture sanitized results.
+- [x] Native Windows WinRT paired enumeration found the remote; `from_id_async` succeeded, but uncached GATT discovery returned `UNREACHABLE`, connection stayed `DISCONNECTED` (2026-10-17). **No HID permission/access conclusion.**
+- [x] Implement [read-only BLE advertisement detection](../../tools/windows-probe/ADVERTISEMENT_DIAGNOSTICS.md) and offline classification/privacy tests.
+- [ ] Test remote advertisement while tapping/holding buttons; retry uncached GATT once after wake.
 - [x] Add Windows CI smoke job for Python imports/help and offline fixture tests — [run 38997823005 passed](https://github.com/Transient-Onlooker/siri-remote-for-windows/actions/runs/38997823005). This **does not** confirm actual HID enumeration or A2854 input access.
 - [x] Implement read-only HID interface enumerator, `ReadFile` probe and sanitized 0xFB/0xFC fixture tests (code only).
 - [ ] **On Windows hardware:** run enumerator and verify actual HID report reads.
