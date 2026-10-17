@@ -29,6 +29,12 @@ class Candidate:
     device_id: str
 
 
+@dataclass
+class AttemptResult:
+    """Per-attempt connection evidence; never contains device identifiers."""
+    discovery_status: str | None = None
+
+
 def runtime_modules():
     """Import only after CLI validation so --help and static checks work anywhere."""
     if sys.platform != "win32":
@@ -79,7 +85,8 @@ def print_hid_comparison(before: Counter, after: Counter) -> None:
 
 
 async def probe_one(selected: Candidate, BluetoothLEDevice, BluetoothCacheMode,
-                    compare_hid: bool = False) -> int:
+                    compare_hid: bool = False,
+                    attempt_result: AttemptResult | None = None) -> int:
     # Do not print the device ID: Windows IDs can embed unique BLE addresses.
     before = None
     if compare_hid:
@@ -100,7 +107,10 @@ async def probe_one(selected: Candidate, BluetoothLEDevice, BluetoothCacheMode,
         result = await device.get_gatt_services_with_cache_mode_async(
             BluetoothCacheMode.UNCACHED
         )
-        print(f"Service discovery status: {status_text(result.status)}")
+        discovery_status = status_text(result.status)
+        if attempt_result is not None:
+            attempt_result.discovery_status = discovery_status.upper()
+        print(f"Service discovery status: {discovery_status}")
         if result.protocol_error is not None:
             print(f"ATT protocol error: 0x{result.protocol_error:02X}")
         print(f"Connection status after discovery: {status_text(device.connection_status)}")
@@ -155,7 +165,8 @@ async def probe_one(selected: Candidate, BluetoothLEDevice, BluetoothCacheMode,
         device.close()
 
 
-async def run(index: int | None, compare_hid: bool = False) -> int:
+async def run(index: int | None, compare_hid: bool = False,
+              attempts: int = 1, scan_before: int = 0) -> int:
     BluetoothLEDevice, BluetoothCacheMode, DeviceInformation = runtime_modules()
     devices = await list_paired(BluetoothLEDevice, DeviceInformation)
     print(f"Paired BLE devices visible to WinRT: {len(devices)}")
@@ -170,8 +181,29 @@ async def run(index: int | None, compare_hid: bool = False) -> int:
     if index < 0 or index >= len(devices):
         print("Invalid index; run without --index to list paired devices.", file=sys.stderr)
         return 2
-    return await probe_one(devices[index], BluetoothLEDevice, BluetoothCacheMode,
-                           compare_hid=compare_hid)
+    if scan_before:
+        # Scan completes before GATT discovery; do not leave a competing
+        # scanner running while requesting a connection to the paired device.
+        from adv_probe import scan
+
+        print("Pre-connection advertisement scan (not device identity proof):")
+        scan_result = await scan(scan_before)
+        if scan_result == 2:
+            print("Advertisement scan failed; continuing independent GATT diagnosis.")
+
+    for attempt in range(1, attempts + 1):
+        evidence = AttemptResult()
+        print(f"GATT connection attempt {attempt}/{attempts}")
+        result = await probe_one(devices[index], BluetoothLEDevice, BluetoothCacheMode,
+                                 compare_hid=compare_hid, attempt_result=evidence)
+        # Do not retry ACCESS_DENIED or other statuses as if they were
+        # connectivity errors. Each attempt uses a new WinRT device object.
+        if evidence.discovery_status != "UNREACHABLE" or attempt == attempts:
+            return result
+        print("Remote unreachable; next attempt in 5 seconds. "
+              "Keep it close and tap a button to wake it.")
+        await asyncio.sleep(5)
+    return 2
 
 
 def main() -> int:
@@ -180,9 +212,18 @@ def main() -> int:
                         help="Index of a paired BLE device shown by the list command")
     parser.add_argument("--hid-snapshot", action="store_true",
                         help="Compare read-only HID interface metadata during GATT attempt")
+    parser.add_argument("--attempts", type=int, default=1,
+                        help="Up to 3 GATT attempts; retry only UNREACHABLE (default 1)")
+    parser.add_argument("--scan-before", type=int, default=0,
+                        help="Optional pre-connection BLE scan seconds (5..30)")
     args = parser.parse_args()
+    if not 1 <= args.attempts <= 3:
+        parser.error("--attempts must be in 1..3")
+    if args.scan_before != 0 and not 5 <= args.scan_before <= 30:
+        parser.error("--scan-before must be 5..30 (or omitted)")
     try:
-        return asyncio.run(run(args.index, compare_hid=args.hid_snapshot))
+        return asyncio.run(run(args.index, compare_hid=args.hid_snapshot,
+                               attempts=args.attempts, scan_before=args.scan_before))
     except (OSError, RuntimeError, TimeoutError) as exc:
         print(f"WinRT GATT diagnostic failed: {type(exc).__name__}: {exc}", file=sys.stderr)
         return 2
