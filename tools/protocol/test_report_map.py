@@ -1,6 +1,9 @@
 """Offline HID Report Map parser/BlueZ discovery tests."""
 
 import unittest
+import subprocess
+import sys
+from pathlib import Path
 from types import SimpleNamespace
 
 from report_map import (HID_SERVICE, REPORT_MAP, find_map_paths,
@@ -117,6 +120,36 @@ class ReportMapTests(unittest.TestCase):
             "NoReply")
         self.assertEqual(safe_bluez_error_name(SimpleNamespace(error_name=None)),
                          "other-error")
+
+    def test_short_scan_requires_opt_in_connection(self):
+        script = Path(__file__).with_name("report_map.py")
+        result = subprocess.run(
+            [sys.executable, str(script), "--inspect", "nonexistent.bin",
+             "--scan-before", "8"],
+            capture_output=True, text=True, timeout=10,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("--scan-before requires --connect", result.stderr)
+
+    def test_connection_requires_exact_prior_name_prefix(self):
+        script = Path(__file__).with_name("report_map.py")
+        result = subprocess.run(
+            [sys.executable, str(script), "--output", "irrelevant.bin",
+             "--connect", "--scan-before", "8"],
+            capture_output=True, text=True, timeout=10,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("--connect requires --output", result.stderr)
+
+    def test_scan_duration_is_bounded(self):
+        script = Path(__file__).with_name("report_map.py")
+        result = subprocess.run(
+            [sys.executable, str(script), "--output", "irrelevant.bin",
+             "--name-prefix", "DL1", "--connect", "--scan-before", "100"],
+            capture_output=True, text=True, timeout=10,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("duration of 1-20", result.stderr)
 
     def test_no_hid_service_no_candidate(self):
         path = "/org/bluez/hci0/dev_11_22_33_44_55_66"
