@@ -22,6 +22,10 @@ The program listens using Bleak's Windows WinRT backend. It prints only coarse m
 
 A matching advertisement suggests a candidate BLE broadcaster is visible; it **does not** establish that the paired bond address is still valid or that Windows can connect to it. No matching advertisement does **not** prove the remote is not transmitting (Windows scan filtering, sleep, timing, rotating address, or other RF conditions can mask it).
 
+## Recorded result (2026-10-17)
+
+A 20-second Windows scan reported **204 matching advertisement events** from **7 nearby identities**, at least one with Apple manufacturer data and HID service UUID 0x1812. Because the scan intentionally redacts addresses and identifiers, these sightings are **not uniquely proven** to come from the A2854. Immediately afterward, a WinRT GATT operation against the paired A2854 succeeded and exposed HID service 0x1812, though its characteristics were denied.
+
 ## After scanning
 
 Do not delete the pairing yet. With the remote awake and nearby:
