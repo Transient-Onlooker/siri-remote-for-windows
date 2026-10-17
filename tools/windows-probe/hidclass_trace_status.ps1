@@ -45,7 +45,13 @@ function Safe-Length($value) {
     if ($null -eq $value) { return '(missing)' }
     try {
         $v = ([string]$value).Trim()
-        if ($v -match '(?i)^0x([0-9a-f]{1,8})
+        if ($v -match '(?i)^0x([0-9a-f]{1,8})$') {
+            $n = [Convert]::ToInt64($Matches[1], 16)
+        } else {
+            $n = [long]::Parse($v)
+        }
+        if ($n -ge 0 -and $n -le 1048576) { return [string]$n }
+    } catch {}
     return '(unavailable)'
 }
 function Get-Parent($id) {
