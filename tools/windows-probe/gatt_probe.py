@@ -1,0 +1,147 @@
+#!/usr/bin/env python3
+"""Windows-native, read-only WinRT BLE/GATT diagnostic for the paired Siri Remote.
+
+No pairing, unpairing, characteristic writes, HID enable writes, or audio capture.
+Requires native Windows and PyWinRT modules supplied by "bleak".
+"""
+
+from __future__ import annotations
+
+import argparse
+import asyncio
+from dataclasses import dataclass
+import sys
+
+HID_SERVICE = "00001812-0000-1000-8000-00805f9b34fb"
+HID_REPORT = "00002a4d-0000-1000-8000-00805f9b34fb"
+BATTERY_SERVICE = "0000180f-0000-1000-8000-00805f9b34fb"
+
+
+def status_text(value: object) -> str:
+    """PyWinRT enum values support .name; preserve numeric value when possible."""
+    return getattr(value, "name", str(value))
+
+
+@dataclass
+class Candidate:
+    name: str
+    device_id: str
+
+
+def runtime_modules():
+    """Import only after CLI validation so --help and static checks work anywhere."""
+    if sys.platform != "win32":
+        raise RuntimeError("Native Windows required (not WSL/Linux).")
+    try:
+        from winrt.windows.devices.bluetooth import BluetoothLEDevice, BluetoothCacheMode
+        from winrt.windows.devices.enumeration import DeviceInformation
+    except ImportError as exc:
+        raise RuntimeError(
+            "Missing Windows WinRT support. Run: py -3 -m pip install \"bleak>=2,<4\""
+        ) from exc
+    return BluetoothLEDevice, BluetoothCacheMode, DeviceInformation
+
+
+async def list_paired(BluetoothLEDevice, DeviceInformation) -> list[Candidate]:
+    selector = BluetoothLEDevice.get_device_selector_from_pairing_state(True)
+    devices = await DeviceInformation.find_all_async(selector)
+    candidates = [Candidate(name=d.name or "(unnamed BLE)", device_id=d.id) for d in devices]
+    candidates.sort(key=lambda d: d.name.lower())
+    return candidates
+
+
+async def probe_one(selected: Candidate, BluetoothLEDevice, BluetoothCacheMode) -> int:
+    # Do not print the device ID: Windows IDs can embed unique BLE addresses.
+    print(f"Opening paired BLE device: {selected.name!r}")
+    device = await BluetoothLEDevice.from_id_async(selected.device_id)
+    if device is None:
+        print("FromIdAsync returned null: pairing record exists, but device is not available.")
+        return 2
+    try:
+        print(f"WinRT device name: {device.name!r}")
+        print(f"Initial connection status: {status_text(device.connection_status)}")
+        print("Requesting uncached GATT services (this may initiate a BLE connection)...")
+        result = await device.get_gatt_services_with_cache_mode_async(
+            BluetoothCacheMode.UNCACHED
+        )
+        print(f"Service discovery status: {status_text(result.status)}")
+        if result.protocol_error is not None:
+            print(f"ATT protocol error: 0x{result.protocol_error:02X}")
+        print(f"Connection status after discovery: {status_text(device.connection_status)}")
+        if status_text(result.status).lower() != "success":
+            print("Service discovery failed. No HID compatibility conclusion yet.")
+            return 2
+        services = list(result.services)
+        print(f"GATT services exposed to this Windows process: {len(services)}")
+        try:
+            for service in services:
+                print(f"  service={str(service.uuid).lower()}")
+            hid_services = [s for s in services if str(s.uuid).lower() == HID_SERVICE]
+            if not hid_services:
+                print("HID 0x1812 is NOT exposed in the WinRT service list.")
+                print("Windows may claim/hide HID, or service discovery may be incomplete.")
+                return 1
+            denied = False
+            for service in hid_services:
+                print("HID 0x1812 present. Requesting its characteristics (read-only)...")
+                try:
+                    chars = await service.get_characteristics_with_cache_mode_async(
+                        BluetoothCacheMode.UNCACHED
+                    )
+                except (OSError, PermissionError) as exc:
+                    denied = True
+                    print(f"HID characteristics access exception: {type(exc).__name__}: {exc}")
+                    continue
+                print(f"HID characteristic discovery: {status_text(chars.status)}")
+                if chars.protocol_error is not None:
+                    print(f"ATT protocol error: 0x{chars.protocol_error:02X}")
+                if status_text(chars.status).lower() != "success":
+                    denied = True
+                    continue
+                reports = [c for c in chars.characteristics if str(c.uuid).lower() == HID_REPORT]
+                print(f"Report 0x2A4D instances exposed: {len(reports)}")
+                for index, characteristic in enumerate(reports):
+                    print(f"  Report[{index}] handle={characteristic.attribute_handle} "
+                          f"properties={characteristic.characteristic_properties}")
+                print("NO notifications or writes attempted. Reaching this point "
+                      "does NOT prove 0xFB/0xFC delivery.")
+            return 1 if denied else 0
+        finally:
+            for service in services:
+                service.close()
+    finally:
+        device.close()
+
+
+async def run(index: int | None) -> int:
+    BluetoothLEDevice, BluetoothCacheMode, DeviceInformation = runtime_modules()
+    devices = await list_paired(BluetoothLEDevice, DeviceInformation)
+    print(f"Paired BLE devices visible to WinRT: {len(devices)}")
+    for i, candidate in enumerate(devices):
+        print(f"  [{i}] {candidate.name}")
+    if not devices:
+        print("No paired BLE devices reported. Check Windows Bluetooth Settings.")
+        return 1
+    if index is None:
+        print("Select a device with: py -3 tools\\windows-probe\\gatt_probe.py --index N")
+        return 0
+    if index < 0 or index >= len(devices):
+        print("Invalid index; run without --index to list paired devices.", file=sys.stderr)
+        return 2
+    return await probe_one(devices[index], BluetoothLEDevice, BluetoothCacheMode)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--index", type=int, default=None,
+                        help="Index of a paired BLE device shown by the list command")
+    args = parser.parse_args()
+    try:
+        return asyncio.run(run(args.index))
+    except (OSError, RuntimeError, TimeoutError) as exc:
+        print(f"WinRT GATT diagnostic failed: {type(exc).__name__}: {exc}", file=sys.stderr)
+        return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
