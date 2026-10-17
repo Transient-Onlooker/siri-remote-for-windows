@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Read-only Linux BlueZ extraction and offline inspection of HID Report Map 0x2A4B.
 
-Run without any BLE writes, pairing, unpairing, driver changes or reconnection.
-Live mode requires an already connected remote and Python 'dbus-next'.
+No BLE writes, pairing changes, driver changes, or privilege escalation.
+By default live mode requires an already connected/resolved remote.
+--connect makes a bounded connection attempt against one existing bonded
+remote and reads its HID Report Map in the same D-Bus session.
 Offline mode (--inspect) works on Windows and Linux using stdlib only.
 """
 
@@ -61,6 +63,23 @@ def find_map_paths(objects: dict, name_prefix: str = "") -> list[str]:
                 if char and str(value(char.get("UUID", ""))).lower() == REPORT_MAP:
                     matches.append(str(char_path))
     return sorted(set(matches))
+
+
+def find_bonded_device_paths(objects: dict, name_prefix: str) -> list[str]:
+    """Select paired BlueZ devices by private friendly-name prefix."""
+    if not name_prefix:
+        return []
+    paths = []
+    for path, ifaces in objects.items():
+        props = ifaces.get(DEVICE)
+        if not props:
+            continue
+        if not str(value(props.get("Name", ""))).casefold().startswith(
+                name_prefix.casefold()):
+            continue
+        if value(props.get("Paired", False)) is True:
+            paths.append(str(path))
+    return sorted(paths)
 
 
 def inspect_map(raw: bytes) -> dict:
@@ -143,7 +162,7 @@ def print_analysis(raw: bytes) -> None:
           "clean output does NOT prove Windows HID compatibility.")
 
 
-async def read_connected_map(name_prefix: str) -> bytes:
+async def read_connected_map(name_prefix: str, connect: bool = False) -> bytes:
     if sys.platform != "linux":
         raise RuntimeError("Live BlueZ read works only on Linux. Use --inspect on Windows.")
     try:
@@ -152,29 +171,65 @@ async def read_connected_map(name_prefix: str) -> bytes:
     except ImportError as exc:
         raise RuntimeError("Missing dependency: python3 -m pip install dbus-next") from exc
     bus = await MessageBus(bus_type=BusType.SYSTEM).connect()
-    try:
-        objects_reply = await bus.call(Message(
+
+    async def snapshot():
+        reply = await bus.call(Message(
             destination="org.bluez", path="/",
             interface="org.freedesktop.DBus.ObjectManager",
             member="GetManagedObjects"))
-        if objects_reply.message_type != MessageType.METHOD_RETURN:
+        if reply.message_type != MessageType.METHOD_RETURN or not reply.body:
             raise RuntimeError("BlueZ ObjectManager query failed")
-        paths = find_map_paths(objects_reply.body[0], name_prefix)
-        print(f"Connected/resolved HID Report Map candidates: {len(paths)}")
+        return reply.body[0]
+
+    async def try_read(objects):
+        paths = find_map_paths(objects, name_prefix)
         if len(paths) != 1:
-            raise RuntimeError(
-                "Exactly one connected/resolved HID Report Map is required. "
-                "Use --name-prefix for disambiguation, or check BlueZ connection state.")
-        # The GATT read is the ONLY remote interaction; does not change HID state.
+            return None
         reply = await bus.call(Message(
             destination="org.bluez", path=paths[0],
             interface=CHARACTERISTIC, member="ReadValue",
             signature="a{sv}", body=[{}]))
-        if reply.message_type != MessageType.METHOD_RETURN:
-            raise RuntimeError("Read-only Report Map GATT read was denied or failed")
-        if not reply.body:
-            raise RuntimeError("BlueZ returned no Report Map payload")
-        return bytes(reply.body[0])
+        if reply.message_type != MessageType.METHOD_RETURN or not reply.body:
+            # A stale GATT object is common if the remote sleeps.
+            return None
+        raw = bytes(reply.body[0])
+        if not raw:
+            return None
+        return raw
+
+    try:
+        objects = await snapshot()
+        result = await try_read(objects)
+        if result is not None:
+            return result
+        if not connect:
+            raise RuntimeError(
+                "Remote not connected/resolved or Report Map read unavailable; "
+                "try --connect --name-prefix DL1 on the existing bonded remote.")
+        candidates = find_bonded_device_paths(objects, name_prefix)
+        print(f"Paired remote candidates matching name prefix: {len(candidates)}")
+        if len(candidates) != 1:
+            raise RuntimeError("A unique previously paired remote is required")
+        target = candidates[0]
+        # Explicit opt-in: Device1.Connect only. No bond or driver changes.
+        for attempt in range(1, 4):
+            print(f"BLE connection/read attempt {attempt}/3; press a remote button to wake it.")
+            response = await bus.call(Message(
+                destination="org.bluez", path=target,
+                interface=DEVICE, member="Connect"))
+            if response.message_type == MessageType.ERROR:
+                print("BlueZ Connect returned a non-success status; checking GATT anyway.")
+            # A remote that powers down quickly can expose GATT only briefly.
+            # Poll the D-Bus tree and read immediately when services resolve.
+            for _ in range(16):
+                objects = await snapshot()
+                result = await try_read(objects)
+                if result is not None:
+                    return result
+                await asyncio.sleep(0.25)
+            if attempt < 3:
+                await asyncio.sleep(1)
+        raise RuntimeError("Report Map was not readable in three bounded attempts")
     finally:
         bus.disconnect()
 
@@ -187,20 +242,24 @@ def main() -> int:
     selection.add_argument("--output", type=Path,
                            help="Read an already-connected Linux BlueZ remote and save binary")
     parser.add_argument("--name-prefix", default="",
-                        help="Optional connected device name prefix; never printed")
+                        help="Optional device name prefix; never printed")
+    parser.add_argument("--connect", action="store_true",
+                        help="Linux only: connect one already paired remote (max 3 tries)")
     args = parser.parse_args()
+    if args.connect and (args.output is None or not args.name_prefix):
+        parser.error("--connect requires --output and a unique --name-prefix")
     try:
         if args.inspect is not None:
             raw = args.inspect.read_bytes()
         else:
-            raw = asyncio.run(read_connected_map(args.name_prefix))
+            raw = asyncio.run(read_connected_map(args.name_prefix, connect=args.connect))
             # Exclusive create prevents accidentally overwriting other captures.
             with args.output.open("xb") as out:
                 out.write(raw)
             print("Saved Report Map to specified local file (no device identifiers printed).")
         print_analysis(raw)
         return 0
-    except (OSError, RuntimeError, ValueError) as exc:
+    except (OSError, RuntimeError, ValueError, asyncio.TimeoutError) as exc:
         # Avoid printing exception payloads from BlueZ that might contain addresses.
         print("Cannot capture/inspect Report Map: " + type(exc).__name__, file=sys.stderr)
         return 2
