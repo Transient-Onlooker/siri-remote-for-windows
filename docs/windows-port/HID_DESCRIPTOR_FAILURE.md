@@ -71,6 +71,22 @@ python3 tools/protocol/report_map.py \
 
 If that still fails, do **not** clear the pairing. Preserve the sanitized failure summary and examine BlueZ logs / connection reasons before deeper interventions.
 
+## Current blocking output: all 3 BLE attempts failed (2026-10-17)
+
+On the restored WSL Ubuntu 22.04 BlueZ session, a unique already-paired `DL1` remote was found, but `report_map.py --connect` made three attempts and ended with a generic `RuntimeError`. The user pressed the remote's buttons during the attempts. That original program suppressed all stages, so the output alone does **not** establish that the remote was asleep, that Bluetooth failed to connect, or that `0x2A4B` is absent.
+
+Code now prints **sanitized per-attempt stages**, including generic BlueZ Connect result, whether Connected/ServicesResolved were ever observed, count of HID `0x1812` services, Report Map `0x2A4B` characteristics, Report `0x2A4D` characteristics, attempted GATT reads, and a generic sanitized last read error code. No device IDs, paths, MACs or private error message strings leave the program.
+
+Because the Windows working directory contains **uncommitted changes** to two other files, `git pull --ff-only` aborts. Fetch only the newer file, *without modifying any tracked work*:
+
+```bash
+git fetch origin main
+git show origin/main:tools/protocol/report_map.py > /tmp/a2854-report-map.py
+python3 /tmp/a2854-report-map.py --name-prefix DL1 --connect --output a2854-report-map.bin
+```
+
+If this shows `Connect=success` but `ServicesResolved=False`, focus on GATT discovery and BlueZ logs. If `ServicesResolved=True` but no HID service is visible, verify plugin configuration and HID ownership. If HID service/report characteristics are visible but Report Map count remains 0, check the device's actual GATT attribute set, rather than assuming the peripheral exposes `0x2A4B`. If a Report Map exists but read returns a non-success result, investigate ATT permissions/authorization and BlueZ behavior. Preserve all existing pairings.
+
 ## Alternative research branch
 
 If reusing BlueZ is impractical, check Windows driver diagnostic providers and HIDCLASS ETW/WPP availability without touching live driver bindings, before any trace capture. Raw traces may contain addresses/serials; do **not** upload raw ETL or setupapi.dev.log publicly without redaction. Whatever the approach, first validate the descriptor hypothesis before attempting a virtual HID or proprietary transport workaround.
