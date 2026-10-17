@@ -52,6 +52,26 @@ jobs:
               print(f"alignment-matrix/{name}: {result}; {detail}; unaligned={len(flags['unaligned'])}; missing_usage={flags['data_variable_input_missing_usage_fields']}")
           print("CI results are NOT Windows HIDCLASS acceptance tests.")
           '@ | python -
+      - name: Test offline descriptor source patch against pinned Microsoft UMDF2 sample
+        shell: pwsh
+        run: |
+          $url = 'https://raw.githubusercontent.com/microsoft/Windows-driver-samples/2dc3fd3a0cc84a2933f2194e7ec0871584979071/hid/vhidmini2/driver/vhidmini.c'
+          $sample = Join-Path $env:RUNNER_TEMP 'official-vhidmini.c'
+          Invoke-WebRequest -Uri $url -OutFile $sample -TimeoutSec 30
+          @'
+          import os
+          import sys
+          from pathlib import Path
+          sys.path.insert(0, "tools/protocol")
+          from vhidmini2_source_matrix import patch_sample_source, SOURCE_RE
+          from test_descriptor_variants import synthetic_descriptor
+          sample = (Path(os.environ["RUNNER_TEMP"]) / "official-vhidmini.c").read_text(encoding="utf-8")
+          patched = patch_sample_source(sample, synthetic_descriptor())
+          assert patched.count("A2854 isolated VM experiment") == 1
+          assert "status = CheckRegistryForDescriptor(device);" not in patched
+          assert len(SOURCE_RE.findall(patched)) == 1
+          print("Pinned Microsoft UMDF2 sample: controlled HID array substitution and strict no-fallback patch verified")
+          '@ | python -
       - name: Parse bounded HIDCLASS ETW capture script
         shell: pwsh
         run: |
