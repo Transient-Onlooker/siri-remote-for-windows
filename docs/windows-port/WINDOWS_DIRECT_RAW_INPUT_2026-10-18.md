@@ -95,3 +95,26 @@ To avoid repeatedly running single-shot tests, `a2854_winrt_input.py` now suppor
 A passive advertisement scan may wake nothing and is **not proof** of a matching advertisement identity; it merely precedes the bounded connect attempts. BLE disconnection, address rotation, system HID service ownership and device sleep remain separate hypotheses.
 
 If it reaches `WINDOWS_PROTECTED_HID_SERVICE` again, stop attempting direct WinRT access: Windows owns/restricts HID `0x1812` via its BLE HID stack. [Microsoft GattCommunicationStatus](https://learn.microsoft.com/en-us/uwp/api/windows.devices.bluetooth.genericattributeprofile.gattcommunicationstatus), [Bleak's 3.0.2 HID service AccessDenied behavior](https://bleak.readthedocs.io/en/latest/_modules/bleak/backends/winrt/client.html).
+
+## 2026-10-18 owner-run native Windows experiment: OS-owned HID service confirmed
+
+User executed `a2854_winrt_input.py --scan-before 10 --attempts 3 --seconds 25` from native PowerShell, with Windows Python 3.13, Bleak 3.0.2. No user-side driver changes or VM.
+
+Sanitized results:
+
+~~~text
+Paired BLE devices=2, name prefix matches=1
+Passive scan: 19 matching advertisements; 5 unverified identities; Apple manufacturer marker only (not A2854 identity proof)
+Attempt 1/3: GATT services UNREACHABLE
+Attempt 2/3: GATT services UNREACHABLE
+Attempt 3/3: GATT services SUCCESS
+Exposed services=7; HID 0x1812=1
+HID Report 0x2A4D characteristic enumeration: ACCESS_DENIED
+WINDOWS_PROTECTED_HID_SERVICE; Report characteristics=0
+No Report Reference discovery; no CCCD writes; no 0xAF input enable;
+no 0xFB/0xFC notifications received or even subscribed.
+~~~
+
+**Evidence interpretation:** Windows can communicate with this paired remote at the GATT service discovery level. The direct WinRT API route is **blocked at the OS-owned HID service** characteristic enumeration stage; not a timeout-only failure and not a report-decoder failure. Bleak's WinRT backend has an explicit [ACCESS_DENIED skip for system-owned HID services](https://bleak.readthedocs.io/en/latest/_modules/bleak/backends/winrt/client.html). The older independent Windows PnP finding is that the exact DL1-descendant `mshidumdf` HID child has Code 10 / `0xC00000B9`. This is NOT proof of which descriptor item caused that failure, and DOES NOT prove all possible Windows Bluetooth data-access paths are impossible.
+
+**Decision:** stop repeating `--scan-before`/`--attempts` GATT tests and do not suggest `--enable-input`: the feature write cannot occur without GATT characteristic access. Do not try bypassing system protection through undocumented privilege or patching live drivers. If built-in AX200 native Bluetooth and no external hardware are strict requirements, pursue Windows HID initialization as a separate root-cause task, or investigate what an existing OS Bluetooth trace already recorded with realistic limitations. If an external central is allowed, an ESP32 BLE central can receive GATT reports and stream bytes over USB serial to Windows, after implementing device bonding/security and the `0xF0/0xAF` enable handshake. Neither alternative is yet verified on hardware.
