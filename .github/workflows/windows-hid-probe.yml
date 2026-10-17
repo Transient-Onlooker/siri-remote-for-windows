@@ -137,6 +137,10 @@ jobs:
         shell: pwsh
         run: |
           powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File tools/windows-probe/a2854_wpp.ps1 -Mode Check
+      - name: Validate pinned Microsoft input WPP XML profile (download only)
+        shell: pwsh
+        run: |
+          powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File tools/windows-probe/a2854_wpp.ps1 -Mode Prepare
       - name: Import Windows APIs and display CLI help
         shell: pwsh
         run: |
