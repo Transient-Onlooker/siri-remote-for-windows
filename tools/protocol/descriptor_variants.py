@@ -148,6 +148,9 @@ WIDE = bytes.fromhex("75 32 96 06 00")  # 50 bits * 6 = 300 bits
 NARROW = bytes.fromhex("75 19 96 0C 00")  # 25 bits * 12 = 300 bits
 INPUT = bytes.fromhex("82 22 01")
 INPUT_WITH_USAGE = bytes.fromhex("09 0B 82 22 01")
+# Input has 17 one-byte fields. One Usage may be insufficient for an
+# independent parser to retain all 17 variable fields; include a Usage range.
+INPUT_WITH_USAGE_RANGE = bytes.fromhex("19 01 29 11 82 22 01")
 UNBUFFERED_INPUT = bytes.fromhex("82 22 00")
 
 
@@ -171,16 +174,26 @@ def make_variants(raw: bytes) -> dict[str, bytes]:
     _once(raw, WIDE, "50-bit Feature size/count")
     _once(raw, INPUT, "buffered Input main item")
 
-    usage = raw.replace(INPUT, INPUT_WITH_USAGE, 1)
+    usage_one = raw.replace(INPUT, INPUT_WITH_USAGE, 1)
+    usage_range = raw.replace(INPUT, INPUT_WITH_USAGE_RANGE, 1)
     narrow = raw.replace(WIDE, NARROW, 1)
-    both = narrow.replace(INPUT, INPUT_WITH_USAGE, 1)
+    narrow_range = narrow.replace(INPUT, INPUT_WITH_USAGE_RANGE, 1)
     no_buffer = raw.replace(INPUT, UNBUFFERED_INPUT, 1)
+    no_buffer_range = raw.replace(
+        INPUT, bytes.fromhex("19 01 29 11") + UNBUFFERED_INPUT, 1
+    )
+    all_three = narrow.replace(
+        INPUT, bytes.fromhex("19 01 29 11") + UNBUFFERED_INPUT, 1
+    )
     return {
         "original": raw,
-        "add_input_usage": usage,
+        "single_input_usage": usage_one,
+        "input_usage_range": usage_range,
         "feature_25x12": narrow,
-        "usage_and_25x12": both,
+        "range_and_25x12": narrow_range,
         "unbuffered_input": no_buffer,
+        "range_and_unbuffered": no_buffer_range,
+        "range_25x12_unbuffered": all_three,
     }
 
 
@@ -213,7 +226,7 @@ def main() -> int:
     parser.add_argument("--input", type=Path, required=True,
                         help="Private 38-byte local descriptor .bin")
     parser.add_argument("--out-dir", type=Path, default=None,
-                        help="Create a NEW local output directory for five .bin variants")
+                        help="Create a NEW local output directory for eight .bin variants")
     args = parser.parse_args()
     try:
         raw = args.input.read_bytes()
