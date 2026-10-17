@@ -154,8 +154,8 @@ if ($Details) {
     if ($priority.Count -eq 0) {
         Write-Output 'No BLE-specific nodes selected.'
     } else {
-        $details = @(Get-Details $priority)
-        $details | Format-Table -AutoSize |
+        $detailRows = @(Get-Details $priority)
+        $detailRows | Format-Table -AutoSize |
             Out-String -Width 160 | Write-Output
     }
 } else {
