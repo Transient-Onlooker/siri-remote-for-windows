@@ -3,7 +3,8 @@
 import unittest
 from types import SimpleNamespace
 
-from report_map import HID_SERVICE, REPORT_MAP, find_map_paths, inspect_map
+from report_map import (HID_SERVICE, REPORT_MAP, find_map_paths,
+                        find_bonded_device_paths, inspect_map)
 
 
 def v(x):
@@ -66,6 +67,21 @@ class ReportMapTests(unittest.TestCase):
         self.assertEqual(len(find_map_paths(objects)), 2)
         objects[dev]["org.bluez.Device1"]["Connected"] = v(False)
         self.assertEqual(find_map_paths(objects, "DL1"), [])
+
+    def test_bonded_selection_requires_prefix_and_existing_pair(self):
+        objects = {
+            "/org/bluez/hci0/dev_private1": {"org.bluez.Device1": {
+                "Name": v("DL1REMOTE"), "Paired": v(True), "Connected": v(False)}},
+            "/org/bluez/hci0/dev_private2": {"org.bluez.Device1": {
+                "Name": v("DL1UNPAIRED"), "Paired": v(False), "Connected": v(True)}},
+            "/org/bluez/hci0/dev_private3": {"org.bluez.Device1": {
+                "Name": v("Keyboard"), "Paired": v(True), "Connected": v(True)}},
+        }
+        self.assertEqual(
+            find_bonded_device_paths(objects, "DL1"),
+            ["/org/bluez/hci0/dev_private1"])
+        self.assertEqual(find_bonded_device_paths(objects, ""), [])
+        self.assertEqual(find_bonded_device_paths(objects, "missing"), [])
 
     def test_no_hid_service_no_candidate(self):
         path = "/org/bluez/hci0/dev_11_22_33_44_55_66"
