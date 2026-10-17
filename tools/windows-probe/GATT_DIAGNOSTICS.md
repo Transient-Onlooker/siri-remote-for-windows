@@ -36,6 +36,23 @@ The paired A2854 was listed by WinRT, but uncached GATT discovery returned `UNRE
 
 The first iteration of this script printed `device.name` which may contain the Bluetooth address. The corrected version no longer prints that WinRT field. Avoid sharing previous unredacted logs externally.
 
+## Follow-up experiment: connected GATT with denied HID characteristics
+
+A subsequent Windows test detected an HID UUID 0x1812 advertisement among nearby devices and successfully opened the paired A2854 through WinRT. The returned service list had **7 services** (GAP, GATT, Device Information, one vendor service, Bond Management, Battery, HID). The GATT service discovery status was `SUCCESS`, connection status became `CONNECTED`, HID service `0x1812` was exposed, and characteristic discovery returned `ACCESS_DENIED`.
+
+**Interpretation:** This strongly suggests an OS/user-mode API restriction on the HID service, but does not by itself establish that Windows HIDClass generated a usable interface for A2854. Windows includes a built-in HID-over-GATT transport, and HID input collections can be opened exclusively by system components. Do not attempt driver-protection or security-policy bypasses.
+
+To test whether HID interfaces become visible during an actual connection, from repository root:
+
+```powershell
+git pull --ff-only
+py -3 tools\windows-probe\gatt_probe.py --index 0 --hid-snapshot
+```
+
+Check the paired device list before assuming the remote is still index 0. The new option prints only counts and coarse VID/PID/usage identifiers, not device paths or Bluetooth addresses. **No new HID interface signature** means none became visible during that capture, not proof that raw BLE is inaccessible by every conceivable API. An additional interface cannot be conclusively attributed to A2854 without correlation.
+
+Microsoft reference: [HID Transport Overview](https://learn.microsoft.com/en-us/windows-hardware/drivers/hid/hid-transports), [HID Architecture](https://learn.microsoft.com/en-us/windows-hardware/drivers/hid/hid-architecture).
+
 ## Interpret carefully
 
 - **A paired record present**: Windows has pairing metadata, not proof of active GATT connectivity.
