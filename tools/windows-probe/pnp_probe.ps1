@@ -1,112 +1,163 @@
 <#
 .SYNOPSIS
-Read-only Windows PnP driver-binding diagnostics for BLE HID devices.
+Fast, read-only inventory of Windows Bluetooth/HID PnP nodes.
 
 .DESCRIPTION
-Summarizes Bluetooth/HIDClass PnP nodes (including non-present devices), looking
-for BTHLE-related nodes, HID-over-GATT drivers, and remote-like names.
-Does not print InstanceId, DevicePath, MAC, container GUID, serials, or raw PnP
-hardware IDs. Never changes drivers, pairing, or device settings.
+Default uses one Get-PnpDevice call and no per-device property queries.
+Optional -Details queries up to -DetailLimit candidate devices, once per
+device requesting three keys together. Output suppresses all device IDs,
+MAC addresses, serials, hardware IDs, container GUIDs, and unrecognized
+friendly names. Never changes pairing, drivers or device settings.
 #>
 
 [CmdletBinding()]
-param()
+param(
+    [switch]$Details,
+    [ValidateRange(1, 20)]
+    [int]$DetailLimit = 8
+)
 
 $ErrorActionPreference = 'Stop'
 
 if (-not (Get-Command Get-PnpDevice -ErrorAction SilentlyContinue)) {
-    Write-Error 'Get-PnpDevice is not available. Run in Windows PowerShell 5.1 on Windows.'
+    Write-Error 'Get-PnpDevice is unavailable; use native Windows PowerShell.'
     exit 2
 }
 
 function Get-SafeName([string]$Name) {
     if ([string]::IsNullOrWhiteSpace($Name)) { return '(unnamed)' }
-    if ($Name -match '(?i)^DL1' -or $Name -match '(?i)Siri Remote') {
+    if ($Name -match '(?i)^DL1|Siri Remote') {
         return '(remote-like name, redacted)'
     }
-    # Device names sometimes contain unique Bluetooth addresses / identifiers.
     if ($Name -match '(?i)(?:[0-9a-f]{2}[:-]){5}[0-9a-f]{2}' -or
-        $Name -match '(?i)(?:[0-9a-f]{2}[_-]){5}[0-9a-f]{2}' -or
         $Name -match '(?i)[0-9a-f]{12}') {
         return '(identifier-bearing name, redacted)'
     }
-    # Avoid dumping arbitrary potentially personally identifying display names.
     return '(other device)'
 }
 
-function Get-PropertyValue($Device, [string]$KeyName) {
-    try {
-        $p = $Device | Get-PnpDeviceProperty -KeyName $KeyName -ErrorAction Stop
-        if ($null -ne $p) { return $p.Data }
-    } catch {
-        # Some devices simply do not expose a property.
-    }
-    return $null
+function Get-NodeFamily($Device) {
+    if ($Device.InstanceId -match '(?i)BTHLEDEVICE') { return 'BTHLEDEVICE' }
+    if ($Device.InstanceId -match '(?i)BTHLE') { return 'BTHLE-other' }
+    if ($Device.Class -eq 'HIDClass') { return 'HIDClass-other' }
+    return 'Bluetooth-other'
 }
 
-$all = @(Get-PnpDevice -ErrorAction Stop)
+function Get-Details([object[]]$Devices) {
+    $keys = @('DEVPKEY_Device_Service', 'DEVPKEY_Device_DriverDesc',
+              'DEVPKEY_Device_ProblemCode')
+    foreach ($device in $Devices) {
+        $props = @()
+        try {
+            # Fetch all three properties in one CIM operation per node.
+            $props = @(Get-PnpDeviceProperty -InstanceId $device.InstanceId -KeyName $keys -ErrorAction Stop)
+        } catch {
+            Write-Output ([pscustomobject]@{
+                Class = [string]$device.Class
+                Status = [string]$device.Status
+                Family = Get-NodeFamily $device
+                Service = '(metadata unavailable)'
+                Driver = '(metadata unavailable)'
+                Problem = '?'
+            })
+            continue
+        }
+        $values = @{}
+        foreach ($p in $props) { $values[[string]$p.KeyName] = $p.Data }
+        $service = $values['DEVPKEY_Device_Service']
+        $desc = $values['DEVPKEY_Device_DriverDesc']
+        $problem = $values['DEVPKEY_Device_ProblemCode']
+        $serviceText = if ([string]::IsNullOrWhiteSpace([string]$service)) {
+            '(none)'
+        } elseif ([string]$service -match '^[A-Za-z0-9_.-]{1,64}$') {
+            [string]$service
+        } else {
+            '(redacted)'
+        }
+        $driverClass = if ([string]$desc -match '(?i)HID.*Bluetooth|Bluetooth.*HID') {
+            'Bluetooth HID'
+        } elseif ([string]$desc -match '(?i)Bluetooth') {
+            'Bluetooth (other)'
+        } elseif ($null -eq $desc) {
+            '(none)'
+        } else {
+            '(other)'
+        }
+        Write-Output ([pscustomobject]@{
+            Class = [string]$device.Class
+            Status = [string]$device.Status
+            Family = Get-NodeFamily $device
+            Service = $serviceText
+            Driver = $driverClass
+            Problem = if ($null -eq $problem) { '?' } else { [string]$problem }
+        })
+    }
+}
+
+try {
+    $all = @(Get-PnpDevice -ErrorAction Stop)
+} catch {
+    Write-Error 'Cannot enumerate Windows PnP devices.'
+    exit 2
+}
 $filtered = @($all | Where-Object {
-    $_.Class -in @('Bluetooth','HIDClass') -or
+    $_.Class -in @('Bluetooth', 'HIDClass') -or
     $_.FriendlyName -match '(?i)^DL1|Siri Remote' -or
     $_.InstanceId -match '(?i)BTHLE'
 })
 
 Write-Output ("All PnP devices: {0}; Bluetooth/HIDClass/BTHLE candidates: {1}" -f $all.Count, $filtered.Count)
-Write-Output 'This is a driver-binding inventory, NOT proof a node belongs to A2854.'
-Write-Output 'No instance IDs, MAC addresses, device paths, or unique device identifiers are printed.'
+Write-Output 'Candidate nodes may be stale or unrelated to the A2854.'
+Write-Output 'Device identifiers, addresses and nonstandard names are suppressed.'
 
 $rows = @(
-    foreach ($d in $filtered) {
-        $service = Get-PropertyValue $d 'DEVPKEY_Device_Service'
-        $driverDesc = Get-PropertyValue $d 'DEVPKEY_Device_DriverDesc'
-        $problem = Get-PropertyValue $d 'DEVPKEY_Device_ProblemCode'
-        $kind = if ($d.InstanceId -match '(?i)BTHLEDEVICE') { 'BTHLEDEVICE' }
-                elseif ($d.InstanceId -match '(?i)BTHLE') { 'BTHLE' }
-                else { 'other' }
-        $serviceSafe = if ($null -eq $service) { '(none)' }
-                       elseif ([string]$service -match '^[A-Za-z0-9_.-]{1,64}$') {
-                           [string]$service
-                       } else { '(unusual service name redacted)' }
-        $driverSafe = if ([string]$driverDesc -match '(?i)HID.*Bluetooth|Bluetooth.*HID') {
-            'Bluetooth HID'
-        } elseif ([string]$driverDesc -match '(?i)Bluetooth') {
-            'Bluetooth (other)'
-        } elseif ($null -eq $driverDesc) {
-            '(none)'
-        } else { '(other)' }
+    foreach ($device in $filtered) {
         [pscustomobject]@{
-            Class = [string]$d.Class
-            Status = [string]$d.Status
-            Node = $kind
-            Name = Get-SafeName ([string]$d.FriendlyName)
-            Service = $serviceSafe
-            Driver = $driverSafe
-            Problem = if ($null -eq $problem) { '?' } else { [string]$problem }
+            Class = [string]$device.Class
+            Status = [string]$device.Status
+            Family = Get-NodeFamily $device
+            Name = Get-SafeName ([string]$device.FriendlyName)
         }
     }
 )
-
-# Summarize driver services, then show a short set of BLE- or HID-related nodes.
 Write-Output ''
-Write-Output 'Driver service counts (all candidate nodes):'
-$rows | Group-Object Service | Sort-Object Count -Descending |
-    Select-Object Count, Name | Format-Table -AutoSize | Out-String -Width 180 |
-    Write-Output
-
-Write-Output 'Bluetooth LE / HID-related candidate nodes:'
-$candidates = @($rows | Where-Object {
-    $_.Node -ne 'other' -or
-    $_.Class -eq 'HIDClass' -or
-    $_.Name -eq '(remote-like name, redacted)' -or
-    $_.Service -match '(?i)HID|BthLE'
-})
-if ($candidates.Count -eq 0) {
-    Write-Output '(no matching PnP nodes found)'
+Write-Output 'Quick inventory (no per-device property queries):'
+if ($rows.Count -eq 0) {
+    Write-Output '(no matching nodes)'
 } else {
-    $candidates | Sort-Object Class, Node, Service |
-        Format-Table Class, Status, Node, Name, Service, Driver, Problem -AutoSize |
-        Out-String -Width 180 | Write-Output
+    $rows | Group-Object Class, Status, Family | Sort-Object Count -Descending |
+        Select-Object Count, Name | Format-Table -AutoSize |
+        Out-String -Width 160 | Write-Output
 }
 
-Write-Output 'Notes: non-present nodes may be stale; a generic/absent service is not proof'
-Write-Output 'of driver failure. Do not change driver/pairing configuration based on this alone.'
+$interesting = @($rows | Where-Object {
+    $_.Family -eq 'BTHLEDEVICE' -or
+    $_.Family -eq 'BTHLE-other' -or
+    $_.Name -eq '(remote-like name, redacted)'
+})
+Write-Output ("BLE-related or remote-like nodes: {0}" -f $interesting.Count)
+if ($interesting.Count -gt 0) {
+    $interesting | Group-Object Class, Status, Family, Name |
+        Sort-Object Count -Descending |
+        Select-Object Count, Name | Format-Table -AutoSize |
+        Out-String -Width 160 | Write-Output
+}
+Write-Output 'No HID binding conclusion can be drawn from PnP counts alone.'
+
+if ($Details) {
+    $priority = @($filtered | Where-Object {
+        $_.FriendlyName -match '(?i)^DL1|Siri Remote' -or
+        $_.InstanceId -match '(?i)BTHLE'
+    } | Select-Object -First $DetailLimit)
+    Write-Output ''
+    Write-Output ("Detailed property queries: {0} of up to {1} nodes" -f $priority.Count, $DetailLimit)
+    if ($priority.Count -eq 0) {
+        Write-Output 'No BLE-specific nodes selected.'
+    } else {
+        $details = @(Get-Details $priority)
+        $details | Format-Table -AutoSize |
+            Out-String -Width 160 | Write-Output
+    }
+} else {
+    Write-Output 'Optional: -Details -DetailLimit 8 (slower; only if needed).'
+}
