@@ -176,6 +176,26 @@ Report the service count and presence of `0x1812`, plus any raw-GATT or BlueZ fa
 
 **Do not restart BlueZ or clear bond state until the process arguments and historic CLI results are known.** If the actual process is already started with `--noplugin=input,hog`, reapplying the same override without new evidence is unlikely to help.
 
+## Rust historical CLI reproduced service discovery timeouts (2026-10-17)
+
+The physical-device owner **verified the actual process** is running `/usr/lib/bluetooth/bluetoothd --noplugin=input,hog` and that the old, previously successful, audio-disabled Rust `~/siri-remote/target/release/siri-remote` binary still exists.
+
+Running its actual `events --address ...` against the existing paired remote for 45 seconds repeatedly yielded **`Service discovery timed out`**, with one **`le-connection-abort-by-local`**. Thus the failure **reproduces across both the historical Rust CLI and our Python D-Bus reader**; it cannot be assigned solely to our new Python script or simply to failure to apply the BlueZ HID-plugin override. Historic success already confirmed real `0x1812` and `0x2A4B` GATT characteristics, so do not conclude the remote no longer supports HID.
+
+**Important upstream clue:** [btleplug 0.13.5 changelog, 2026-10-10](https://docs.rs/crate/btleplug/0.13.5/source/CHANGELOG.md) explicitly fixes BlueZ `connect()` returning the *identical* `Service discovery timed out` when the remote takes longer than the older **5-second** service-resolution limit, extending the limit to **30 seconds**. This repository currently pins **btleplug 0.11.8** and **bluez-async 0.8.2** in `Cargo.lock`, predating the fix. This establishes a plausible *library timeout* contributing to the Rust symptoms; it does **not prove** BlueZ would resolve successfully if given 30 seconds, since a separate Python observation also saw `ServicesResolved=False`.
+
+The least disruptive controlled experiment is now **one bounded BlueZ D-Bus connection with longer monitoring** instead of many Rust reconnections at 0.5-second intervals:
+
+```bash
+git fetch origin main
+git show origin/main:tools/protocol/report_map.py > /tmp/a2854-report-map.py
+python3 /tmp/a2854-report-map.py --name-prefix DL1 \
+  --connect --scan-before 8 --observe-seconds 45 --attempts 1 \
+  --output a2854-report-map.bin
+```
+
+The sanitized output includes `connected samples=N/M` and final Connected state. If GATT resolves and a 0x2A4B Report Map is readable, this verifies the timeout hypothesis *for the BlueZ observation*, not necessarily all Rust-side behavior. If still unresolved after a sustained connection, investigate authentication/encryption and actual ATT transactions at the controller level, **without exposing stored pairing keys or modifying the pairing databases**. Restarting a properly configured bluetoothd, wiping its cache, or forcibly re-pairing is not warranted by current evidence.
+
 ## Alternative research branch
 
 If reusing BlueZ is impractical, check Windows driver diagnostic providers and HIDCLASS ETW/WPP availability without touching live driver bindings, before any trace capture. Raw traces may contain addresses/serials; do **not** upload raw ETL or setupapi.dev.log publicly without redaction. Whatever the approach, first validate the descriptor hypothesis before attempting a virtual HID or proprietary transport workaround.
