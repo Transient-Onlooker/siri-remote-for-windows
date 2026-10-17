@@ -82,6 +82,60 @@ def find_bonded_device_paths(objects: dict, name_prefix: str) -> list[str]:
     return sorted(paths)
 
 
+def remote_gatt_state(objects: dict, path: str) -> dict:
+    """Summarize only public protocol states of one PRIVATE BlueZ device path.
+
+    Never return/print the device path, address, serial, service object paths or
+    characteristic object paths. Works even when services have not resolved.
+    """
+    props = objects.get(path, {}).get(DEVICE, {})
+    hid = [
+        str(service_path)
+        for service_path, ifaces in objects.items()
+        if str(service_path).startswith(path + "/")
+        and str(value(ifaces.get(SERVICE, {}).get("UUID", ""))).lower()
+        == HID_SERVICE
+    ]
+    report_chars = 0
+    map_chars = 0
+    for char_path, ifaces in objects.items():
+        if not any(str(char_path).startswith(service + "/") for service in hid):
+            continue
+        char = ifaces.get(CHARACTERISTIC)
+        if not char:
+            continue
+        uuid = str(value(char.get("UUID", ""))).lower()
+        if uuid == REPORT_MAP:
+            map_chars += 1
+        elif uuid == "00002a4d-0000-1000-8000-00805f9b34fb":
+            report_chars += 1
+    return {
+        "connected": value(props.get("Connected", False)) is True,
+        "resolved": value(props.get("ServicesResolved", False)) is True,
+        "hid_services": len(hid),
+        "map_chars": map_chars,
+        "report_chars": report_chars,
+    }
+
+
+def safe_bluez_error_name(reply) -> str:
+    """Emit recognized generic D-Bus errors only (never error messages)."""
+    name = str(getattr(reply, "error_name", "") or "")
+    if name.startswith("org.bluez.Error."):
+        suffix = name[len("org.bluez.Error."):]
+        if suffix in {
+            "Failed", "NotReady", "InProgress", "AlreadyConnected",
+            "NotConnected", "NotAvailable", "NotSupported", "NotAuthorized",
+            "NotPermitted", "AuthenticationFailed", "AuthenticationCanceled",
+            "AuthenticationRejected", "AuthenticationTimeout",
+            "ConnectionAttemptFailed", "DoesNotExist",
+        }:
+            return suffix
+    if name == "org.freedesktop.DBus.Error.NoReply":
+        return "NoReply"
+    return "other-error"
+
+
 def inspect_map(raw: bytes) -> dict:
     """Cheap HID item boundary/collection checks, NOT a full Windows HID parser."""
     i = 0
@@ -181,21 +235,30 @@ async def read_connected_map(name_prefix: str, connect: bool = False) -> bytes:
             raise RuntimeError("BlueZ ObjectManager query failed")
         return reply.body[0]
 
-    async def try_read(objects):
+    async def try_read(objects, diagnostics=None):
         paths = find_map_paths(objects, name_prefix)
         if len(paths) != 1:
             return None
-        reply = await bus.call(Message(
-            destination="org.bluez", path=paths[0],
-            interface=CHARACTERISTIC, member="ReadValue",
-            signature="a{sv}", body=[{}]))
-        if reply.message_type != MessageType.METHOD_RETURN or not reply.body:
-            # A stale GATT object is common if the remote sleeps.
+        if diagnostics is not None:
+            diagnostics["read_attempts"] += 1
+        try:
+            reply = await asyncio.wait_for(bus.call(Message(
+                destination="org.bluez", path=paths[0],
+                interface=CHARACTERISTIC, member="ReadValue",
+                signature="a{sv}", body=[{}])), timeout=8)
+        except asyncio.TimeoutError:
+            if diagnostics is not None:
+                diagnostics["read_status"] = "timeout"
             return None
-        raw = bytes(reply.body[0])
-        if not raw:
+        if reply.message_type != MessageType.METHOD_RETURN:
+            if diagnostics is not None:
+                diagnostics["read_status"] = safe_bluez_error_name(reply)
             return None
-        return raw
+        if not reply.body or not bytes(reply.body[0]):
+            if diagnostics is not None:
+                diagnostics["read_status"] = "empty"
+            return None
+        return bytes(reply.body[0])
 
     try:
         objects = await snapshot()
@@ -214,19 +277,44 @@ async def read_connected_map(name_prefix: str, connect: bool = False) -> bytes:
         # Explicit opt-in: Device1.Connect only. No bond or driver changes.
         for attempt in range(1, 4):
             print(f"BLE connection/read attempt {attempt}/3; press a remote button to wake it.")
-            response = await bus.call(Message(
-                destination="org.bluez", path=target,
-                interface=DEVICE, member="Connect"))
-            if response.message_type == MessageType.ERROR:
-                print("BlueZ Connect returned a non-success status; checking GATT anyway.")
-            # A remote that powers down quickly can expose GATT only briefly.
-            # Poll the D-Bus tree and read immediately when services resolve.
+            diag = {"read_attempts": 0, "read_status": "not-attempted"}
+            ever = {
+                "connected": False, "resolved": False,
+                "hid_services": 0, "map_chars": 0, "report_chars": 0
+            }
+            try:
+                response = await asyncio.wait_for(bus.call(Message(
+                    destination="org.bluez", path=target,
+                    interface=DEVICE, member="Connect")), timeout=15)
+                connect_status = ("success" if response.message_type
+                                  == MessageType.METHOD_RETURN
+                                  else safe_bluez_error_name(response))
+            except asyncio.TimeoutError:
+                connect_status = "timeout"
+
+            # Track EVER observed states, not just the last fleeting snapshot.
             for _ in range(16):
                 objects = await snapshot()
-                result = await try_read(objects)
+                current = remote_gatt_state(objects, target)
+                ever["connected"] |= current["connected"]
+                ever["resolved"] |= current["resolved"]
+                for name in ("hid_services", "map_chars", "report_chars"):
+                    ever[name] = max(ever[name], current[name])
+                result = await try_read(objects, diagnostics=diag)
                 if result is not None:
+                    print(f"Attempt {attempt}: Report Map read success.")
                     return result
                 await asyncio.sleep(0.25)
+            print(
+                f"Attempt {attempt} diagnostic: Connect={connect_status}; "
+                f"seen Connected={ever['connected']}, "
+                f"ServicesResolved={ever['resolved']}; "
+                f"HID service count={ever['hid_services']}, "
+                f"Report Map 0x2A4B count={ever['map_chars']}, "
+                f"Report characteristic 0x2A4D count={ever['report_chars']}; "
+                f"map reads={diag['read_attempts']}, "
+                f"last read status={diag['read_status']}"
+            )
             if attempt < 3:
                 await asyncio.sleep(1)
         raise RuntimeError("Report Map was not readable in three bounded attempts")
@@ -261,7 +349,16 @@ def main() -> int:
         return 0
     except (OSError, RuntimeError, ValueError, asyncio.TimeoutError) as exc:
         # Avoid printing exception payloads from BlueZ that might contain addresses.
-        print("Cannot capture/inspect Report Map: " + type(exc).__name__, file=sys.stderr)
+        # Our own fixed RuntimeError strings are safe, but arbitrary D-Bus
+        # exception messages may contain private hardware identifiers.
+        if isinstance(exc, RuntimeError) and str(exc) in {
+            "Report Map was not readable in three bounded attempts",
+            "A unique previously paired remote is required",
+            "BlueZ ObjectManager query failed",
+        }:
+            print("Cannot capture/inspect Report Map: " + str(exc), file=sys.stderr)
+        else:
+            print("Cannot capture/inspect Report Map: " + type(exc).__name__, file=sys.stderr)
         return 2
 
 
