@@ -78,3 +78,27 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:TEMP\a2854_vm_prep
 - [WdfDeviceOpenRegistryKey and hardware key](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/wdfdevice/nf-wdfdevice-wdfdeviceopenregistrykey)
 - [Microsoft driver testing and WDK](https://learn.microsoft.com/en-us/windows-hardware/drivers/develop/testing-a-driver)
 - [Microsoft PnPUtil](https://learn.microsoft.com/en-us/windows-hardware/drivers/devtest/pnputil-command-syntax)
+
+## 2026-10-18 실제 호스트 사전검사 결과 및 VM 실행 결정
+
+실제 Windows 11 사용자 PC가 수정된 read-only host checker를 실행했다. 결과:
+
+- Windows 11 Home, `EditionID=Core`, build `26200`.
+- AMD Ryzen 7 5800H, virtualization firmware enabled = `True`.
+- HypervisorPresent = `True`; `VirtualMachinePlatform=Enabled`; `HypervisorPlatform=Disabled`.
+- `SecondLevelAddressTranslationExtensions=False`라고 보고하지만 이 CPU의 하드웨어 SLAT 미지원 증거는 아님; WSL2/활성 하이퍼바이저가 함께 관측됨.
+- Client Hyper-V PowerShell cmdlets absent; `Microsoft-Hyper-V-All` state unavailable on Home.
+- RAM 15.4GiB physical. Only fixed drive C:, free **29.6GiB** of 455.8GiB.
+- Private A2854 38-byte descriptor SHA-256 confirmed and all four UMDF2 C source variants generated successfully at a user-private TEMP folder. **Do not regenerate unless damaged.**
+
+**Gate decision: DO NOT create/install Windows 11 driver-test VM on C: right now.** Official Windows 11 VM minimum is **64GB provisioned virtual storage**, RAM >=4GB, >=2vCPU, vTPM and Secure Boot. Even if thin/dynamic disks initially consume less than 64GB, a Windows 11 installation, Visual Studio/WDK, and four build outputs/snapshots on a 29.6GiB-free drive are not safe planning assumptions. The 15.4GiB physical RAM can support a minimal VM, but memory pressure must be considered.
+
+### Next available execution paths
+
+1. **Preferred local:** move VM disk and development artifacts to an external SSD or another internal drive with **at least 100–150GB free** (planning headroom, NOT Microsoft's minimum), use a supported Windows Home-compatible virtualization app (such as VMware Workstation Pro or Oracle VirtualBox), Windows 11 guest x64 with UEFI/Secure Boot/vTPM. If WSL2 hypervisor causes conflicts, choose hypervisor-compatibility mode supported by the chosen product rather than globally turning off WSL2. Verify VM can boot and snapshot FIRST. Current free personal/education/commercial VMware Workstation Pro status: https://www.vmware.com/docs/desktop-hypervisor-faqs . VirtualBox official Windows 11 guest support: https://docs.oracle.com/en/virtualization/virtualbox/7.2/user/Introduction.html
+2. **Cloud Windows VM:** disposable remote Windows test host with 2+ vCPU, 8GiB RAM, ~100GB disk, permitted to enable test-signing/WDK driver installation. Check licensing/billing and provider driver-signing support. Build the driver source and keep original descriptor and WPP files private. This route avoids consuming the laptop's SSD.
+3. **Pause native VM experiment:** original A2854 is unaffected, prior proof is preserved. Work independently on separate BLE-central + Windows user-mode app input transport for actual functionality. Do not assert the 38-byte descriptor's cause is proven until native HID parser oracle runs.
+
+Official VM minimum: https://learn.microsoft.com/en-us/windows/whats-new/windows-11-requirements . If a Windows Enterprise evaluation image is used, consult eligibility/use rules; the official 90-day evaluation is intended for IT professionals and may require sign-in/registration: https://www.microsoft.com/ko-kr/evalcenter/evaluate-windows-11-enterprise . No ISO, Windows features, test certificates, or driver packages have yet been installed by these scripts.
+
+**Next decision needs a location to store/run the Windows guest**, not another Bluetooth/ETW capture or another Python parser experiment.
