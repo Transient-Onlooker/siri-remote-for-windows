@@ -58,7 +58,8 @@ async def probe_one(selected: Candidate, BluetoothLEDevice, BluetoothCacheMode) 
         print("FromIdAsync returned null: pairing record exists, but device is not available.")
         return 2
     try:
-        print(f"WinRT device name: {device.name!r}")
+        # WinRT device.name can be a Bluetooth MAC address rather than a friendly name.
+        # The paired device name above is enough for these diagnostics.
         print(f"Initial connection status: {status_text(device.connection_status)}")
         print("Requesting uncached GATT services (this may initiate a BLE connection)...")
         result = await device.get_gatt_services_with_cache_mode_async(
