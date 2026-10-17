@@ -30,6 +30,12 @@ Get-PnpDevice -Class Bluetooth |
 
 Avoid posting raw Windows `InstanceId` fields publicly because some encode unique Bluetooth addresses.
 
+## Confirmed 2026-10-17 device result
+
+The paired A2854 was listed by WinRT, but uncached GATT discovery returned `UNREACHABLE` and `DISCONNECTED`. This means no usable GATT session was established for the attempted discovery, **not** that HID 0x1812 access is denied. Before changing pairing or driver settings, run the [read-only advertisement scan](ADVERTISEMENT_DIAGNOSTICS.md) with wake-button timing.
+
+The first iteration of this script printed `device.name` which may contain the Bluetooth address. The corrected version no longer prints that WinRT field. Avoid sharing previous unredacted logs externally.
+
 ## Interpret carefully
 
 - **A paired record present**: Windows has pairing metadata, not proof of active GATT connectivity.
