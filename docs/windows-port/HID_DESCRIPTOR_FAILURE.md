@@ -333,6 +333,24 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:TEMP\hidclass_trac
 
 This extraction neither starts new tracing nor restarts any device. If the event is **RemoteDescendant** and shows `0xC00000B9` plus a nonzero descriptor length, that is strong evidence that the HIDCLASS manifested ETW snapshot observed the same failure and may contain useful descriptor bytes for later local offline parsing. It does **not** prove malformed bytes until actual parsing or driver trace confirms it. If no remote-descendant event matches, leave linkage unresolved and develop a more selective correlation method; do not claim another device's error is Siri Remote's.
 
+## 2026-10-17 HIDCLASS status parser encountered event layout mismatch
+
+On the real PC, `hidclass_trace_status.ps1` opened the same locally retained ETL and found the expected **ten Event ID 3 version 2** records. The Siri Remote was uniquely identifiable as a Bluetooth PnP anchor, **but every event returned `SchemaMismatch`** under the script's original requirement that `EventRecord.Properties.Count` be at least as large as the provider's manifest template count. Thus **no event start status, device attribution, or descriptor length was actually extracted**. Do not describe this as a remote-side descriptor error; it is a **diagnostic parser layout assumption failure**.
+
+The script was repaired in commit `8c86a4f`: it now inspects each record's **named XML EventData** fields first, falling back to manifest-indexed `Properties` **only if** actual property count equals the full template count. When neither is available, it prints `LayoutUnresolved` with **only numeric** `PropertyCount` and `XmlFieldCount` for further investigation; it never guesses positional indexes for a truncated event, nor prints unique identifiers or raw descriptor data.
+
+Collect the repaired output from the original ETL (no new pairing/tracing):
+
+```powershell
+cd "C:\Users\무조림.000\Desktop\코딩\01_working\siri-remote-for-windows"
+git fetch origin main
+git show origin/main:tools/windows-probe/hidclass_trace_status.ps1 |
+    Set-Content "$env:TEMP\hidclass_trace_status.ps1" -Encoding UTF8
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:TEMP\hidclass_trace_status.ps1"
+```
+
+Only `Source=NamedXML` or `Source=FullTemplate` gives meaningful start-status and correlation rows; `Source=LayoutUnresolved` is **inconclusive**. Inspect counts to determine the next trustworthy decoding approach without requesting raw ETL upload.
+
 ## Alternative research branch
 
 If reusing BlueZ is impractical, check Windows driver diagnostic providers and HIDCLASS ETW/WPP availability without touching live driver bindings, before any trace capture. Raw traces may contain addresses/serials; do **not** upload raw ETL or setupapi.dev.log publicly without redaction. Whatever the approach, first validate the descriptor hypothesis before attempting a virtual HID or proprietary transport workaround.
