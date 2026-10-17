@@ -48,6 +48,29 @@ The inspector prints SHA-256, length, Report IDs, item/collection counts, and ba
 
 When the Report Map is available, the next development step is to test it against Microsoft's HID parser or collect a sanitized HIDCLASS driver trace to identify the exact error offset. **No driver disabling, inf edits, registry writes or Windows pairing reset is authorized or necessary for the present diagnosis.**
 
+## 2026-10-17 WSL recovery: pip absent and BLE link drops
+
+The physical-device owner restored the prior Ubuntu 22.04 WSL instance, confirmed `8087:0029` passed through from Windows as bus ID `1-3`, and verified BlueZ was running with `--noplugin=input,hog`. The A2854 remains **Paired: yes, Trusted: yes**, but one `bluetoothctl connect` succeeded only transiently and soon reported **Connected: no**. Ubuntu Python also lacked `pip`.
+
+Install the user-space Python dependency using Ubuntu's package manager:
+
+```bash
+sudo apt update
+sudo apt install -y python3-pip
+python3 -m pip install --user dbus-next
+python3 -c "import dbus_next; print('dbus-next OK')"
+```
+
+The capture tool now optionally supports **`--connect`** so it can invoke BlueZ `org.bluez.Device1.Connect` and promptly read the Report Map in the **same process**. It checks for one **previously paired** `DL1` remote before connecting, polls `ServicesResolved`, and makes at most three connection/read attempts. It does **not** pair/unpair, write GATT attributes, disable HID plugins, change a driver, or deliberately disconnect the device.
+
+```bash
+python3 tools/protocol/report_map.py \
+  --name-prefix DL1 --connect \
+  --output a2854-report-map.bin
+```
+
+If that still fails, do **not** clear the pairing. Preserve the sanitized failure summary and examine BlueZ logs / connection reasons before deeper interventions.
+
 ## Alternative research branch
 
 If reusing BlueZ is impractical, check Windows driver diagnostic providers and HIDCLASS ETW/WPP availability without touching live driver bindings, before any trace capture. Raw traces may contain addresses/serials; do **not** upload raw ETL or setupapi.dev.log publicly without redaction. Whatever the approach, first validate the descriptor hypothesis before attempting a virtual HID or proprietary transport workaround.
