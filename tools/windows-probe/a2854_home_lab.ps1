@@ -124,8 +124,28 @@ switch ($Stage) {
         if ($LASTEXITCODE -ne 0) { throw 'Offline alignment experiment failed.' }
 
         Write-Output '--- PHASE 3: independent Python HID parser (offline when installed) ---'
-        $optionalParser = (& py.exe -3 -c 'import importlib.util; print("present" if importlib.util.find_spec("hid_parser") else "missing")') -join ''
-        if ($LASTEXITCODE -eq 0 -and $optionalParser -eq 'present') {
+        # Windows PowerShell 5.1 strips nested quoting from native
+        # executable -c arguments (e.g. find_spec("hid_parser") becomes
+        # find_spec(hid_parser)). Avoid -c entirely for this dependency check.
+        # pip freeze-style listing is safe to consume as plain text.
+        $packages = @(& py.exe -3 -m pip list --format=freeze)
+        $pipOk = ($LASTEXITCODE -eq 0)
+        $hasParser = $pipOk -and (@(
+            $packages | Where-Object { $_ -match '(?i)^hid-parser==0\.1\.0
+            & py.exe -3 $independent --input $privateInput
+            if ($LASTEXITCODE -ne 0) { throw 'Independent HID parser failed.' }
+        } else {
+            Write-Output 'Optional hid-parser 0.1.0 is not installed.'
+            Write-Output 'To enable: py -3 -m pip install hid-parser==0.1.0'
+        }
+        Write-Output '--- SAFE LAB COMPLETE ---'
+        Write-Output 'No system state modified. Nothing uploaded; optional .bin variants remain in TEMP.'
+        Write-Output 'Follow up in this order: PrepareWpp, then (explicitly) CaptureWpp.'
+    }
+}
+ }
+        ).Count -gt 0)
+        if ($hasParser) {
             & py.exe -3 $independent --input $privateInput
             if ($LASTEXITCODE -ne 0) { throw 'Independent HID parser failed.' }
         } else {
