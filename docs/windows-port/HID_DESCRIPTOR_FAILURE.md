@@ -146,6 +146,36 @@ python3 /tmp/bluez_journal.py --minutes 120 --detail --kernel
 
 An important alternative hypothesis is stale bond credentials: the **same physical Intel AX200** controller was used to pair this remote under both native Windows and WSL BlueZ. The `Paired: yes` flag reflects local stored credentials, not necessarily the remote still accepting those credentials after any subsequent Windows pairing. However, the current evidence does **not** establish key mismatch. Look for safe authentication/encryption/GATT failure indicators in logs before considering any re-pairing, which could disrupt the working Windows bond. Do not erase either OS's bonding database as a first step.
 
+## Cross-check of the previously successful WSL experiment (2026-10-17)
+
+The agent handling the earlier successful hardware session recovered original command order. The durable handoff ([WSL_COMPATIBILITY_NOTES](WSL_COMPATIBILITY_NOTES.md), [EXPERIMENT_TIMELINE](EXPERIMENT_TIMELINE.md), and [HANDOFF](../../HANDOFF_2026-10-17.md)) independently agrees:
+
+1. `~/siri-remote/target/release/siri-remote pair --scan-seconds 8 --hold-seconds 10` established an actual BlueZ bond, notwithstanding a misleading post-pairing error message.
+2. The first `siri-remote events --address ...` connected but listed **5 services**, excluding HID `0x1812`; BlueZ journal reported `input-hog profile accept failed`.
+3. After `bluetoothd --noplugin=input,hog` was applied through a systemd override **and the service restarted**, the **same Rust `events` CLI** enumerated **6 services**, **20 characteristics**, **6 descriptors**, with **8 HID report characteristics**, and subscribed to `0xFB` buttons and `0xFC` touch. Feature report `0xF0` received `0xAF`.
+4. No bond deletion, cache wipe, remote reset, or manually executed `bluetoothctl connect` step was documented as necessary.
+5. **Historical `ServicesResolved=True` was not independently sampled**; earlier CLI text saying “Services already resolved” coexisted with missing HID services.
+
+The current WSL session confirms an installed systemd override and an active Bluetooth service, but **the live process command line has not yet been checked**. The new Python `report_map.py` reports `Connect=success` / `Connected=True` / `ServicesResolved=False` in short observations. This is not proof that BlueZ is in precisely the same state as the historical missing-HID case.
+
+### Next discriminating experiment (no pairing changes)
+
+First check the actual running `bluetoothd` argv, then **replay the existing successful Rust binary**, which implements the older connection/subscription workflow and may differ from our newer D-Bus-only map reader:
+
+```bash
+ps -C bluetoothd -o args=
+test -x "$HOME/siri-remote/target/release/siri-remote" && echo 'historic CLI: available' || echo 'historic CLI: missing'
+REMOTE=$(bluetoothctl devices | awk '/DL1|Siri Remote/ {print $2; exit}')
+if [ -n "$REMOTE" ] && [ -x "$HOME/siri-remote/target/release/siri-remote" ]; then
+  timeout 45s "$HOME/siri-remote/target/release/siri-remote" events --address "$REMOTE" 2>&1 \
+    | sed -E 's/([[:xdigit:]]{2}:){5}[[:xdigit:]]{2}/[BLE ADDRESS]/g'
+fi
+```
+
+Report the service count and presence of `0x1812`, plus any raw-GATT or BlueZ failure **with MACs redacted**. `timeout` may end the successful continuous event stream; this does not imply the stream failed. If the historic binary is missing, do not rebuild from unmodified upstream automatically: the local build used a temporary audio-disabled workaround. First examine the preserved backup/build tree.
+
+**Do not restart BlueZ or clear bond state until the process arguments and historic CLI results are known.** If the actual process is already started with `--noplugin=input,hog`, reapplying the same override without new evidence is unlikely to help.
+
 ## Alternative research branch
 
 If reusing BlueZ is impractical, check Windows driver diagnostic providers and HIDCLASS ETW/WPP availability without touching live driver bindings, before any trace capture. Raw traces may contain addresses/serials; do **not** upload raw ETL or setupapi.dev.log publicly without redaction. Whatever the approach, first validate the descriptor hypothesis before attempting a virtual HID or proprietary transport workaround.
