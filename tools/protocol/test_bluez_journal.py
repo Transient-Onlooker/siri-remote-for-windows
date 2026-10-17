@@ -70,7 +70,7 @@ class JournalTests(unittest.TestCase):
         events = (
             f"{private} GATT service discovery failed status: 0x0a\\n"
             f"{private} connection aborted reason: 0x13\\n"
-            "Unable to register codec endpoint\\n"
+            "Failed to register codec endpoint\\n"
         )
         response = SimpleNamespace(returncode=0, stdout=events)
         with patch("bluez_journal.subprocess.run", return_value=response) as run:
