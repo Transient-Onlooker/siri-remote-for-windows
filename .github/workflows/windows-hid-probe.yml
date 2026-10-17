@@ -38,6 +38,7 @@ jobs:
           sys.path.insert(0, "tools/protocol")
           from test_descriptor_variants import synthetic_descriptor
           from descriptor_variants import make_variants
+          from byte_alignment_matrix import make_alignment_matrix, alignment_findings
           from third_party_variant_check import check
           from hid_parser import ReportDescriptor
           # Verify the external parser can process a conventional valid report.
@@ -45,6 +46,10 @@ jobs:
           for name, binary in make_variants(synthetic_descriptor()).items():
               result, detail = check(binary)
               print(f"synthetic/{name}: {result}; {detail}")
+          for name, binary in make_alignment_matrix(synthetic_descriptor()).items():
+              result, detail = check(binary)
+              flags = alignment_findings(binary)
+              print(f"alignment-matrix/{name}: {result}; {detail}; unaligned={len(flags['unaligned'])}; missing_usage={flags['data_variable_input_missing_usage_fields']}")
           print("CI results are NOT Windows HIDCLASS acceptance tests.")
           '@ | python -
       - name: Parse bounded HIDCLASS ETW capture script
