@@ -113,6 +113,24 @@ python3 /tmp/a2854-report-map.py --name-prefix DL1 --connect \
 
 If this again fails, **stop reconnection attempts** and inspect only the local Bluetooth controller/power state and time-scoped HCI/BlueZ reason codes. Prefer a privacy-safe filtered diagnostic over copying raw journals that may reveal hardware addresses. Do not unpair, delete BlueZ cache, modify Apple TV pairings, or reinstall the Bluetooth driver based on this data alone.
 
+## Observed after 8s scan (2026-10-17, WSL)
+
+A unique previously bonded device was selected. A scan produced zero **new RSSI PropertiesChanged updates**, which is inconclusive. Unlike previous attempts, all three `Device1.Connect` calls returned `success`, and `Connected=True` was observed. However, `ServicesResolved=False` during the observation windows, no HID `0x1812` or Report Map `0x2A4B` objects appeared, and no Map reads were sent.
+
+Interpretation: Bluetooth connectivity and GATT service discovery are **different milestones**. BlueZ `Connect()` success is not a guarantee of completed service resolution; see [BlueZ Device1 API](https://bluez.readthedocs.io/en/latest/device-api/). The absence of HID objects before service resolution **does not establish** the physical remote lacks these characteristics. The Windows `0xC00000B9` issue remains a separate, already-established HID initialization failure.
+
+The capture tool now also reports `connected samples / total samples` and the final observed Connected state, distinguishing a fleeting BLE link from a sustained connection whose GATT discovery is stalled.
+
+Next perform a **read-only, privacy-safe** inspection of the relevant BlueZ journal:
+
+```bash
+git fetch origin main
+git show origin/main:tools/protocol/bluez_journal.py > /tmp/bluez_journal.py
+python3 /tmp/bluez_journal.py --minutes 60
+```
+
+This emits only generic failure categories and short numeric codes, **not raw journal messages, addresses, serials or D-Bus paths**. If no event is found, BlueZ could be running without detailed debug logs. Do not restart the controller or repeat pairing solely based on an unresolved GATT state.
+
 ## Alternative research branch
 
 If reusing BlueZ is impractical, check Windows driver diagnostic providers and HIDCLASS ETW/WPP availability without touching live driver bindings, before any trace capture. Raw traces may contain addresses/serials; do **not** upload raw ETL or setupapi.dev.log publicly without redaction. Whatever the approach, first validate the descriptor hypothesis before attempting a virtual HID or proprietary transport workaround.
