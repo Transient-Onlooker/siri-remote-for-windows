@@ -1,5 +1,7 @@
 # Windows-native HID access probe (Phase 1)
 
+**PnP finding:** Two BTHLEDEVICE HIDClass/mshidumdf nodes exist; one failed to start (problem code 10). Their ownership is not established. Next run [read-only PnP relationship correlation](PNP_CORRELATION.md), without modifying drivers.
+
 **Latest experiment:** The remote connected through WinRT after one `UNREACHABLE` retry, yet access to HID 0x1812 characteristics was denied and HID interface count stayed 20. The next diagnostic is a [read-only PnP driver inventory](PNP_DIAGNOSTICS.md), rather than repeating identical GATT calls or altering Windows security/driver settings.
 
 **Update:** A first uncached GATT attempt was `UNREACHABLE`, but the next attempt **connected**, found 7 GATT services including HID `0x1812`, and received `ACCESS_DENIED` when listing HID characteristics. The next read-only step is [GATT `--hid-snapshot --scan-before 10 --attempts 3` comparison](GATT_DIAGNOSTICS.md) while the remote is connected. See the [BLE advertisement evidence](ADVERTISEMENT_DIAGNOSTICS.md). Do not attempt reads from unrelated HID devices.
