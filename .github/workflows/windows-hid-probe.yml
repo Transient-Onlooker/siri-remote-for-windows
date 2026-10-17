@@ -171,6 +171,9 @@ jobs:
         shell: pwsh
         run: |
           powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File tools/windows-probe/a2854_wpp.ps1 -Mode Prepare
+      - name: Read-only virtual HID test host capability preflight
+        shell: pwsh
+        run: powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File tools/windows-probe/a2854_vm_host_check.ps1
       - name: Import Windows APIs and display CLI help
         shell: pwsh
         run: |
