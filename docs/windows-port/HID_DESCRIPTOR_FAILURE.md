@@ -196,6 +196,25 @@ python3 /tmp/a2854-report-map.py --name-prefix DL1 \
 
 The sanitized output includes `connected samples=N/M` and final Connected state. If GATT resolves and a 0x2A4B Report Map is readable, this verifies the timeout hypothesis *for the BlueZ observation*, not necessarily all Rust-side behavior. If still unresolved after a sustained connection, investigate authentication/encryption and actual ATT transactions at the controller level, **without exposing stored pairing keys or modifying the pairing databases**. Restarting a properly configured bluetoothd, wiping its cache, or forcibly re-pairing is not warranted by current evidence.
 
+## 2026-10-17 Windows fresh pairing: exact Code 10 recurred
+
+After returning Intel AX200 to Windows (`usbipd list` showed **Not shared**) and pairing the Siri Remote again natively, Windows briefly displayed a connected state for ~5 seconds, followed by disconnection and a **Driver error** UI status. The owner re-ran the **unchanged** remote-ancestor-correlated read-only PowerShell `tools/windows-probe/pnp_failure.ps1` from the correct repository root and obtained:
+
+```text
+Remote anchors=1; BLE HIDClass nodes=2
+BLE HID problem-code-10 nodes descended from remote: 1
+HID problem code: 10; service: mshidumdf
+DEVPKEY_Device_ProblemStatus (NTSTATUS): 0xC00000B9
+Matching Kernel-PnP event 411 entries: 1
+2026-10-17 16:28:53  EventId=411  Problem=0xa  Status=0xC00000B9
+```
+
+This confirms a **new**, post-repairing failure with **exactly the same driver/service and NTSTATUS** as the earlier 12:53:25 observation. It rules out “the PnP error happened only before re-pairing.” The approximately five-second Bluetooth disconnect **may** be related to HID initialization failure but direct cause/timing remains unproven. A normal idle BLE disconnection is also possible. Do not interpret a Windows Bluetooth connection label alone as an HID readiness indicator.
+
+Microsoft [HidP_GetCollectionDescription documentation](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/hidpddi/nf-hidpddi-hidp_getcollectiondescription) explicitly includes `STATUS_COULD_NOT_INTERPRET` for HID Report Descriptor errors, and [HIDP_GETCOLDESC_DBG](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/hidpddi/ns-hidpddi-_hidp_getcoldesc_dbg) describes an internal parser failure byte offset. But this PnP status does **not** establish the actual source of the propagated error, so do not claim a descriptor byte is defective without raw `0x2A4B` and/or driver trace.
+
+**Next** rerun the repository's existing **read-only native Windows WinRT GATT probe** *after* this fresh pairing. Run it once without `--index` to identify the current Siri Remote index (indexes can change after re-pairing), then use that index with `--hid-snapshot --scan-before 10 --attempts 3`. Compare against the earlier WinRT session's **7 services, HID 0x1812 present, HID characteristic discovery `ACCESS_DENIED`, HID interfaces 20→20**. Do not rerun `pair`, remove device nodes, change Bluetooth drivers, bypass GATT access controls, or reset Windows PnP just to repeat a known Code 10.
+
 ## Alternative research branch
 
 If reusing BlueZ is impractical, check Windows driver diagnostic providers and HIDCLASS ETW/WPP availability without touching live driver bindings, before any trace capture. Raw traces may contain addresses/serials; do **not** upload raw ETL or setupapi.dev.log publicly without redaction. Whatever the approach, first validate the descriptor hypothesis before attempting a virtual HID or proprietary transport workaround.
