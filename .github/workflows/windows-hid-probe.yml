@@ -1,0 +1,27 @@
+name: Windows HID probe checks
+on:
+  push:
+    paths:
+      - 'tools/windows-probe/**'
+      - '.github/workflows/windows-hid-probe.yml'
+  pull_request:
+    paths:
+      - 'tools/windows-probe/**'
+      - '.github/workflows/windows-hid-probe.yml'
+jobs:
+  probe-smoke:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Compile and run pure HID decoder fixtures
+        shell: pwsh
+        run: |
+          python -m compileall -q tools/windows-probe
+          python -m unittest discover -s tools/windows-probe -v
+      - name: Import Windows APIs and display CLI help
+        shell: pwsh
+        run: python tools/windows-probe/hid_probe.py --help
+      # Physical BLE adapter/remote is not available on CI runners.
