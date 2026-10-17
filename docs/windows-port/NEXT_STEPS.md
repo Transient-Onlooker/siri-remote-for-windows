@@ -25,7 +25,9 @@
 - [x] Add a read-only [PnP driver binding diagnostic](../../tools/windows-probe/PNP_DIAGNOSTICS.md) which omits all device instance IDs, paths and MAC addresses.
 - [x] Native Windows PnP inventory completed: 362 devices, 81 BLE/HID candidates; two BTHLEDEVICE HIDClass/mshidumdf nodes, one OK (problem 0), one Error (problem 10). **Remote ownership unknown.**
 - [x] Implement read-only [PnP relationship correlation](../../tools/windows-probe/PNP_CORRELATION.md) via private PnP ContainerId/Parent (synthetic tests only).
-- [ ] Run PnP correlation locally; investigate the failed HID node only if its device relationship is established.
+- [x] Run PnP correlation locally: BLE HIDClass/mshidumdf problem-code-10 node is **descended from Siri Remote's unique DL1 Bluetooth PnP parent**; the healthy BLE HID node does not match.
+- [x] Add [read-only remote-specific Code 10 details and Kernel-PnP 411 diagnostic](../../tools/windows-probe/PNP_FAILURE.md), with synthetic Windows regression tests.
+- [ ] Inspect the failed HID child node's ProblemStatus NTSTATUS and any exact-match event 411, then evaluate the least-invasive repair path. No driver/bond changes yet.
 - [x] Add Windows CI smoke job for Python imports/help and offline fixture tests — [run 38997823005 passed](https://github.com/Transient-Onlooker/siri-remote-for-windows/actions/runs/38997823005). This **does not** confirm actual HID enumeration or A2854 input access.
 - [x] Implement read-only HID interface enumerator, `ReadFile` probe and sanitized 0xFB/0xFC fixture tests (code only).
 - [ ] **On Windows hardware:** run enumerator and verify actual HID report reads.
