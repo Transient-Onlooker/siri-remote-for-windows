@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+from collections import Counter
 from dataclasses import dataclass
 import sys
 
@@ -50,8 +51,42 @@ async def list_paired(BluetoothLEDevice, DeviceInformation) -> list[Candidate]:
     return candidates
 
 
-async def probe_one(selected: Candidate, BluetoothLEDevice, BluetoothCacheMode) -> int:
+def hid_snapshot() -> Counter:
+    """Summarize Windows HID interfaces without retaining device paths/IDs."""
+    from hid_probe import enumerate_hid
+    return Counter(
+        (d.vendor, d.product, d.usage_page, d.usage, d.input_length)
+        for d in enumerate_hid()
+    )
+
+
+def print_hid_comparison(before: Counter, after: Counter) -> None:
+    """Print counts and coarse IDs only; a difference is not proof of A2854 ownership."""
+    print(f"HID interfaces before={sum(before.values())} after={sum(after.values())}")
+    additions = after - before
+    removed = before - after
+    for (vid, pid, page, usage, length), count in sorted(
+        additions.items(), key=lambda item: str(item[0])
+    ):
+        fmt = lambda v: "unknown" if v is None else f"{v:04X}"
+        print(f"  Added {count}: VID={fmt(vid)} PID={fmt(pid)} "
+              f"usage={fmt(page)}:{fmt(usage)} input_length={length}")
+    if removed:
+        print(f"  Removed interface signatures: {sum(removed.values())}")
+    if not additions:
+        print("No new HID interface signatures appeared during this GATT attempt.")
+    print("Interface changes do not prove which device owns them; no HID data was read.")
+
+
+async def probe_one(selected: Candidate, BluetoothLEDevice, BluetoothCacheMode,
+                    compare_hid: bool = False) -> int:
     # Do not print the device ID: Windows IDs can embed unique BLE addresses.
+    before = None
+    if compare_hid:
+        try:
+            before = hid_snapshot()
+        except OSError as exc:
+            print(f"HID snapshot unavailable: {exc}")
     print(f"Opening paired BLE device: {selected.name!r}")
     device = await BluetoothLEDevice.from_id_async(selected.device_id)
     if device is None:
@@ -111,10 +146,16 @@ async def probe_one(selected: Candidate, BluetoothLEDevice, BluetoothCacheMode) 
             for service in services:
                 service.close()
     finally:
+        # Capture while the WinRT BluetoothLEDevice is still open.
+        if before is not None:
+            try:
+                print_hid_comparison(before, hid_snapshot())
+            except OSError as exc:
+                print(f"Second HID snapshot unavailable: {exc}")
         device.close()
 
 
-async def run(index: int | None) -> int:
+async def run(index: int | None, compare_hid: bool = False) -> int:
     BluetoothLEDevice, BluetoothCacheMode, DeviceInformation = runtime_modules()
     devices = await list_paired(BluetoothLEDevice, DeviceInformation)
     print(f"Paired BLE devices visible to WinRT: {len(devices)}")
@@ -129,16 +170,19 @@ async def run(index: int | None) -> int:
     if index < 0 or index >= len(devices):
         print("Invalid index; run without --index to list paired devices.", file=sys.stderr)
         return 2
-    return await probe_one(devices[index], BluetoothLEDevice, BluetoothCacheMode)
+    return await probe_one(devices[index], BluetoothLEDevice, BluetoothCacheMode,
+                           compare_hid=compare_hid)
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--index", type=int, default=None,
                         help="Index of a paired BLE device shown by the list command")
+    parser.add_argument("--hid-snapshot", action="store_true",
+                        help="Compare read-only HID interface metadata during GATT attempt")
     args = parser.parse_args()
     try:
-        return asyncio.run(run(args.index))
+        return asyncio.run(run(args.index, compare_hid=args.hid_snapshot))
     except (OSError, RuntimeError, TimeoutError) as exc:
         print(f"WinRT GATT diagnostic failed: {type(exc).__name__}: {exc}", file=sys.stderr)
         return 2
