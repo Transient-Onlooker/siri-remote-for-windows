@@ -59,6 +59,12 @@ If all three attempts show UNREACHABLE, stop and keep the logs. Check the paired
 
 Microsoft reference: [HID Transport Overview](https://learn.microsoft.com/en-us/windows-hardware/drivers/hid/hid-transports), [HID Architecture](https://learn.microsoft.com/en-us/windows-hardware/drivers/hid/hid-architecture).
 
+## 2026-10-17 follow-up: connected, but still no newly visible HID interface
+
+With `--hid-snapshot --scan-before 10 --attempts 3`, the first GATT attempt was `UNREACHABLE`, then the second connected and returned seven services, including HID 0x1812; HID characteristic discovery returned `ACCESS_DENIED`. The count of Windows HID interfaces remained **20 before and 20 after** on both attempts. This is stronger evidence that ordinary user-mode HID/GATT access is not immediately available, but cannot conclusively show whether Windows bound a system HID driver, whether an interface already existed, or whether a hidden device node has an error state.
+
+Next run the [read-only PnP driver inventory](PNP_DIAGNOSTICS.md); avoid assuming that GATT denial necessarily means a functioning HIDClass input interface exists.
+
 ## Interpret carefully
 
 - **A paired record present**: Windows has pairing metadata, not proof of active GATT connectivity.
