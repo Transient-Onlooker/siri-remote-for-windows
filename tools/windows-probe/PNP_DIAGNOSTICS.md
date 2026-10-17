@@ -4,6 +4,12 @@
 
 Windows ships an inbox **HID-over-Bluetooth-LE** transport driver (`HidBthLE.dll`), documented at [Microsoft HID transport overview](https://learn.microsoft.com/en-us/windows-hardware/drivers/hid/hid-transports). The presence of the transport does not guarantee this particular remote is recognized as a user-accessible HID collection. PnP service and problem-code metadata can help distinguish driver binding, stale nodes, and missing child devices.
 
+## Completed native PnP inventory
+
+User's full output showed 362 PnP devices, 81 Bluetooth/HID candidates, and two BTHLEDEVICE HIDClass nodes with service mshidumdf; one OK (problem 0) and one Error (problem 10). The problem-code-10 HID node has not yet been attributed to A2854. Use [PnP relationship correlation](PNP_CORRELATION.md) before changing any driver.
+
+The previous tool performed three property queries per 81 candidates (up to 243 separate calls). Updated quick mode avoids per-node property queries, with optional capped -Details -DetailLimit 8.
+
 ## Next safe on-device test (native Windows PowerShell)
 
 ```powershell
