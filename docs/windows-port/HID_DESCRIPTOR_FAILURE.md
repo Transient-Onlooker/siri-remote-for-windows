@@ -371,6 +371,43 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:TEMP\hidclass_rest
 
 The trace reinitializes only the already-failed remote HID child; Windows PnP restart may still fail or leave Code 10 unchanged. If no event matches, the absence remains inconclusive; consider a more targeted **WPP HIDCLASS parser** trace or obtaining the true report map from a controlled bonded Linux session **only if** separately justified, rather than restarting the whole adapter or deleting the Windows pairing. [Microsoft PnPUtil command syntax](https://learn.microsoft.com/en-us/windows-hardware/drivers/devtest/pnputil-command-syntax) documents \`/restart-device <instance ID>\`.
 
+## 2026-10-17 confirmed failed A2854 HIDCLASS ETW event during targeted PnP restart
+
+The owner executed the opt-in \`hidclass_restart_trace.ps1 -Execute\` against the unique **Code 10 / mshidumdf / 0xC00000B9** HID child of the Siri Remote. Actual sanitized output:
+
+\`\`\`text
+Unique remote anchor found; matching failed HID child nodes: 1
+Before: HID child Code 10; NTSTATUS=0xC00000B9
+Targeted PnP restart command exit code: 0
+After: HID child problem code=10; NTSTATUS=0xC00000B9
+Trace: HIDCLASS event count=13
+Trace: Event 3 v2 records exactly matching failed HID child=1
+  DeviceStartStatus=0xC00000B9; events=1
+Kernel-PnP 411 query unavailable or no events were found.
+\`\`\`
+
+**This is the first HIDCLASS ETW event confirmed to belong to the A2854 failed HID node**, not one of the 10 unrelated successful HID rundown events from the earlier trace. \`pnputil /restart-device\` returned success at the command level; the target HID driver start still failed with the same status. The Kernel-PnP 411 lookup returned no usable result, but the exact-attributed HIDCLASS failure event is independently sufficient to establish HID initialization failure. This does **not** yet prove malformed descriptor bytes (nor that this error causes the user-visible idle BLE disconnection).
+
+Crucially, HIDCLASS Event ID 3 v2's manifest includes \`ReportDescriptorLength\` and \`ReportDescriptor\` binary fields. The new safe local offline tool [\`tools/windows-probe/hidclass_extract_descriptor.ps1\`](../../tools/windows-probe/hidclass_extract_descriptor.ps1) checks the newest locally retained \`siri_hid_restart_*.etl\`, identifies the unique Siri Remote \`mshidumdf\` HID node, and matches event \`DeviceInstancePath\` **exactly** in process memory. Only if there is exactly one matching event with \`DeviceStartStatus=0xC00000B9\` and an internally coherent nonzero descriptor byte length will \`-SaveBinary\` create a new local \`%TEMP%\a2854_hidclass_report_map.bin\` (never overwrite). Nothing else is read from a BLE service, and no device is restarted. If descriptor data is absent/truncated/unsupported, the script leaves it untouched and reports an inconclusive local diagnostic.
+
+Run in administrator PowerShell:
+
+\`\`\`powershell
+cd "C:\Users\무조림.000\Desktop\코딩\01_working\siri-remote-for-windows"
+git fetch origin main
+git show origin/main:tools/windows-probe/hidclass_extract_descriptor.ps1 |
+    Set-Content "$env:TEMP\hidclass_extract_descriptor.ps1" -Encoding UTF8
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:TEMP\hidclass_extract_descriptor.ps1" -SaveBinary
+\`\`\`
+
+If the output says a validated binary was saved, inspect the local copy:
+
+\`\`\`powershell
+py -3 tools\protocol\report_map.py --inspect "$env:TEMP\a2854_hidclass_report_map.bin"
+\`\`\`
+
+\`report_map.py --inspect\` provides a **basic** HID item/collection structure check, not a formal Windows parser equivalent. Even a clean structure would not rule out a semantic incompatibility causing \`STATUS_COULD_NOT_INTERPRET\`. Never upload the raw ETL, PnP instance ID, or raw report descriptor to a public repo without review. The script prints numeric status, descriptor byte count, extraction status, and a proposed local offline command, not the private content.
+
 ## Alternative research branch
 
 If reusing BlueZ is impractical, check Windows driver diagnostic providers and HIDCLASS ETW/WPP availability without touching live driver bindings, before any trace capture. Raw traces may contain addresses/serials; do **not** upload raw ETL or setupapi.dev.log publicly without redaction. Whatever the approach, first validate the descriptor hypothesis before attempting a virtual HID or proprietary transport workaround.
