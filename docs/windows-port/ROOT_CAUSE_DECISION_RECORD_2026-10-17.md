@@ -97,3 +97,51 @@ Button presses and releases correctly decoded, no stuck key on BLE disconnect; m
 6. https://devzone.nordicsemi.com/f/nordic-q-a/40874/windows-10-driver-error-with-ble-hid-devices
 7. https://community.osr.com/t/workarounds-for-bad-hid-report-descriptors/59724
 8. https://learn.microsoft.com/en-us/windows-hardware/drivers/hid/hid-transports
+
+
+## 2026-10-17 WPR verbose HIDCLASS trace negative control: no matching providers
+
+The owner's Windows 11 build 26200 successfully ran the pinned Microsoft
+InputOnlyWithVerboseWppProfile through `wpr -start`, restarted **one uniquely
+correlated Siri Remote HID child** (`pnputil` exit code 0), and stopped WPR
+successfully. The resulting ETL was 10.38 MiB; HID child remains `mshidumdf`
+Code 10 / `0xC00000B9`. However WPA showed **no WPP Trace graph**.
+
+Reading the copied ETL from the restored user's normal TEMP, Get-WinEvent
+returned 93,075 events with **all ProviderName empty**, which means the naive
+zero-provider counts were not trustworthy. A follow-up read-only `tracerpt`
+provider GUID summary processed **93,076 events**, **zero lost**, recognized
+**22 GUID/event-table rows**, and found **zero exact provider GUID rows** for:
+
+- HIDCLASS WPP: `47c779cd-4efd-49d7-9b10-9f16e5c25d06`.
+- HIDCLASS manifested ETW: `6465da78-e7a0-4f39-b084-8f53c7c30dc6`.
+
+The WPR trace did not demonstrably record either target provider even though
+the static pinned XML lists both in `InputOnlyWithVerboseWppProfile`.
+Thus **ETL file success and no dropped events are not evidence of successful
+HIDCLASS WPP provider activation or emitted parser messages**. A pre-existing
+unrelated `logman` ETL DID contain an exact correlated HIDCLASS manifested
+Event ID 3 v2 with `DeviceStartStatus=0xC00000B9`, so HIDCLASS emits such
+events under at least one collection configuration on this host.
+
+**GATE DECISION:** stop investigating WPA layouts and do not repeat the same
+WPR capture. Directly compare parser acceptance with a virtual HID device
+in an isolated Windows **test VM** (no driver/signing/security changes to
+the real host). Before any new WPR attempt, there would have to be a
+demonstrably different provider-enablement mechanism plus a live collector
+`wpr -status collectors -details` preflight; simply restarting the remote
+again is not a useful experiment.
+
+Microsoft official starting point:
+https://github.com/microsoft/Windows-driver-samples/tree/main/hid/vhidmini2
+(UMDF 2 sample; its source can load a report descriptor from a registry
+test setting rather than only the compiled default descriptor). Follow
+sample instructions in disposable VM and prove sample default starts
+successfully before evaluating one A2854 variant per boot/test. Compare:
+`original`, `padding_only`, `usage_range_only`, `usage_plus_padding`.
+Retain Code 10/NTSTATUS and success per variant. One change at a time,
+no live Bluetooth pairing/firmware involvement.
+
+References: [Microsoft UMDF 2 virtual HID minidriver](https://github.com/microsoft/Windows-driver-samples/tree/main/hid/vhidmini2),
+[WPR status collectors and provider list](https://learn.microsoft.com/en-us/windows-hardware/test/wpt/wpr-command-line-options),
+[HIDCLASS WPP parser trace example](https://learn.microsoft.com/en-us/windows-hardware/drivers/hid/troubleshoot-hid-over-i2c-device-issues).
