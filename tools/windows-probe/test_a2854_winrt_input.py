@@ -86,6 +86,24 @@ class ProbeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([v.report_id for _, v in reports], [0xFB, 0xFC, 0xFA])
         self.assertTrue(all(v.report_type == 1 for _, v in reports))
 
+    async def test_unreachable_status_only_allows_bounded_transport_retry(self):
+        device = SimpleNamespace(
+            get_gatt_services_with_cache_mode_async=AsyncMock(
+                return_value=reply("UNREACHABLE", services=[]))
+        )
+        self.assertEqual(
+            await receive(device, FakeCache, FakeCccd, seconds=5, enable=False),
+            7,
+        )
+        other = SimpleNamespace(
+            get_gatt_services_with_cache_mode_async=AsyncMock(
+                return_value=reply("PROTOCOL_ERROR", services=[]))
+        )
+        self.assertEqual(
+            await receive(other, FakeCache, FakeCccd, seconds=5, enable=False),
+            2,
+        )
+
     async def test_receiver_exits_before_notifications_when_hid_denied(self):
         service = SimpleNamespace(
             uuid=HID_SERVICE, close=Mock(),
