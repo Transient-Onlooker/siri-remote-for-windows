@@ -29,6 +29,19 @@ jobs:
           python -m unittest discover -s tools/windows-probe -v
           python -m compileall -q tools/protocol
           python -m unittest discover -s tools/protocol -v
+      - name: Parse bounded HIDCLASS ETW capture script
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Join-Path $pwd 'tools/windows-probe/hidclass_trace.ps1'),
+            [ref]$tokens, [ref]$errors
+          ) | Out-Null
+          if ($errors.Count -gt 0) {
+            $errors | ForEach-Object { Write-Error $_.ToString() }
+            exit 1
+          }
       - name: Import Windows APIs and display CLI help
         shell: pwsh
         run: |
