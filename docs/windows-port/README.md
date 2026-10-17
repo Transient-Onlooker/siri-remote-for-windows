@@ -1,6 +1,6 @@
 # Windows-native Siri Remote — project handoff
 
-**Status: PAUSED (2026-10-17); documentation and Linux hardware proof-of-concept only.**  
+**Status: RESTARTED (2026-10-17); read-only native Windows HID diagnostic implemented, real Windows device access not yet tested.**  
 **Device:** Apple TV Siri Remote (3rd generation, A2854)  
 **Upstream:** [azais-corentin/siri-remote](https://github.com/azais-corentin/siri-remote) · **Fork:** [Transient-Onlooker/siri-remote-for-windows](https://github.com/Transient-Onlooker/siri-remote-for-windows)
 
@@ -8,10 +8,11 @@
 
 The original application successfully receives remote control and touchpad events on Linux. Our intended *product* is different: a **native Windows app** using the normal Windows Bluetooth stack, without WSL2, USB/IP passthrough, a Linux server, or an always-open terminal.
 
-As of 2026-10-17, the remote was successfully tested on Linux in WSL2. **A Windows-native BLE/HID implementation has not been built or validated.** The current fork still contains upstream Linux code. It is not yet a Windows release.
+As of 2026-10-17, the remote was successfully tested on Linux in WSL2. **A read-only Windows HID diagnostic now exists, but has not been run against physical hardware; a full Windows BLE/HID application has not been built or validated.** The current fork still contains upstream Linux code. It is not yet a Windows release.
 
 ## Entry points
 
+- [Windows HID capability probe](../../tools/windows-probe/README.md) — read-only interface enumerator and 0xFB/0xFC test (hardware result pending)
 - [Complete dated handoff (Korean)](../../HANDOFF_2026-10-17.md)
 - [Sanitized HID report fixtures](OBSERVED_REPORT_FIXTURES.md)
 
