@@ -215,6 +215,29 @@ Microsoft [HidP_GetCollectionDescription documentation](https://learn.microsoft.
 
 **Next** rerun the repository's existing **read-only native Windows WinRT GATT probe** *after* this fresh pairing. Run it once without `--index` to identify the current Siri Remote index (indexes can change after re-pairing), then use that index with `--hid-snapshot --scan-before 10 --attempts 3`. Compare against the earlier WinRT session's **7 services, HID 0x1812 present, HID characteristic discovery `ACCESS_DENIED`, HID interfaces 20→20**. Do not rerun `pair`, remove device nodes, change Bluetooth drivers, bypass GATT access controls, or reset Windows PnP just to repeat a known Code 10.
 
+## 2026-10-17 WinRT GATT re-test following Windows re-pairing
+
+The newly paired A2854 is paired BLE index **0** (`DL1…`); the only other visible paired LE device is a keyboard. The user ran `py -3 tools/windows-probe/gatt_probe.py --index 0 --hid-snapshot --scan-before 10 --attempts 3`:
+
+- Scan: 88 matching advertisement events across 9 unverified BLE identities; one Apple-manufacturer advertisement had the HID `0x1812` UUID. **Do not ascribe this advertisement to A2854 without matching identity evidence.**
+- First and only GATT attempt: `SUCCESS`, BluetoothLEDevice `CONNECTED`, **seven** GATT services, including HID `0x1812`.
+- Uncached HID characteristic enumeration: **`ACCESS_DENIED`**.
+- HID interface signatures: **20 before → 20 after**. No new signature appeared, but unchanged count cannot exclude an existing broken HID instance (which is now independently proven).
+
+This exactly **reproduces the prior Windows GATT pattern after a fresh re-pair**, alongside the newly repeated exact Siri Remote HID driver node `mshidumdf` Code 10 / NTSTATUS `0xC00000B9` / Kernel-PnP Event 411. The Windows Bluetooth LE transport does work for normal GATT service discovery. It is **not justified** to blame the five-second Windows Settings “disconnected” indicator for HID Code 10; Windows may close an otherwise idle BLE link. `ACCESS_DENIED` to a user-mode GATT characteristic operation cannot alone distinguish OS HID ownership from other access-control behavior. The proven failure boundary is **Windows HID child driver start**.
+
+The best next non-invasive investigation is **read-only inventory of available HIDCLASS trace providers and event channels**:
+
+```powershell
+logman query providers | Select-String -Pattern 'HIDCLASS','BTHLE','Bluetooth'
+Get-WinEvent -ListLog '*HID*' -ErrorAction SilentlyContinue |
+    Select-Object LogName, IsEnabled, RecordCount
+```
+
+According to [Microsoft's HID troubleshooting guide](https://learn.microsoft.com/en-us/windows-hardware/drivers/hid/troubleshoot-hid-over-i2c-device-issues), HIDCLASS WPP tracing can reveal a report-descriptor parser **byte offset** when an invalid HID descriptor is returned. The manifest-based `Microsoft-Windows-Input-HIDCLASS` ETW provider is also described there. However, the illustrated transport is **I2C**, not our Bluetooth LE HID transport, and the precise WPP trace availability and messages on this system must be determined before promising an offset or capturing any trace. This provider inventory is read-only and does not install a driver, change the pairing, or turn on tracing.
+
+Do not upload raw ETL traces, SetupAPI logs, or Windows instance paths publicly without redaction; they may contain unique Bluetooth addresses and other identifiers. The next step is deciding whether a supported HIDCLASS trace is available or whether the **actual Report Map `0x2A4B`** must be captured again from Linux following an explicitly user-approved, disruptive re-pair.
+
 ## Alternative research branch
 
 If reusing BlueZ is impractical, check Windows driver diagnostic providers and HIDCLASS ETW/WPP availability without touching live driver bindings, before any trace capture. Raw traces may contain addresses/serials; do **not** upload raw ETL or setupapi.dev.log publicly without redaction. Whatever the approach, first validate the descriptor hypothesis before attempting a virtual HID or proprietary transport workaround.
