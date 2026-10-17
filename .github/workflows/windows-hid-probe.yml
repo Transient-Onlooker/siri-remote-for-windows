@@ -55,6 +55,19 @@ jobs:
             $errors | ForEach-Object { Write-Error $_.ToString() }
             exit 1
           }
+      - name: Parse HIDCLASS status-correlation script
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Join-Path $pwd 'tools/windows-probe/hidclass_trace_status.ps1'),
+            [ref]$tokens, [ref]$errors
+          ) | Out-Null
+          if ($errors.Count -gt 0) {
+            $errors | ForEach-Object { Write-Error $_.ToString() }
+            exit 1
+          }
       - name: Import Windows APIs and display CLI help
         shell: pwsh
         run: |
