@@ -1,0 +1,210 @@
+#!/usr/bin/env python3
+"""Read-only Linux BlueZ extraction and offline inspection of HID Report Map 0x2A4B.
+
+Run without any BLE writes, pairing, unpairing, driver changes or reconnection.
+Live mode requires an already connected remote and Python 'dbus-next'.
+Offline mode (--inspect) works on Windows and Linux using stdlib only.
+"""
+
+from __future__ import annotations
+
+import argparse
+import asyncio
+from collections import Counter
+import hashlib
+from pathlib import Path
+import sys
+
+DEVICE = "org.bluez.Device1"
+SERVICE = "org.bluez.GattService1"
+CHARACTERISTIC = "org.bluez.GattCharacteristic1"
+HID_SERVICE = "00001812-0000-1000-8000-00805f9b34fb"
+REPORT_MAP = "00002a4b-0000-1000-8000-00805f9b34fb"
+
+
+def value(obj):
+    """Unwrap dbus-next Variants, compatible with ordinary fixture objects."""
+    return getattr(obj, "value", obj)
+
+
+def find_map_paths(objects: dict, name_prefix: str = "") -> list[str]:
+    """Find map characteristics below CONNECTED + resolved HID devices only.
+
+    Return private BlueZ object paths internally; caller must never print them.
+    """
+    matches = []
+    prefix = name_prefix.casefold()
+    devices = []
+    for path, ifaces in objects.items():
+        props = ifaces.get(DEVICE)
+        if not props:
+            continue
+        name = str(value(props.get("Name", "")))
+        if prefix and not name.casefold().startswith(prefix):
+            continue
+        if value(props.get("Connected", False)) is not True:
+            continue
+        if value(props.get("ServicesResolved", False)) is not True:
+            continue
+        devices.append(str(path))
+    for dev in devices:
+        for service_path, ifaces in objects.items():
+            if not str(service_path).startswith(dev + "/"):
+                continue
+            svc = ifaces.get(SERVICE)
+            if not svc or str(value(svc.get("UUID", ""))).lower() != HID_SERVICE:
+                continue
+            for char_path, child in objects.items():
+                if not str(char_path).startswith(str(service_path) + "/"):
+                    continue
+                char = child.get(CHARACTERISTIC)
+                if char and str(value(char.get("UUID", ""))).lower() == REPORT_MAP:
+                    matches.append(str(char_path))
+    return sorted(set(matches))
+
+
+def inspect_map(raw: bytes) -> dict:
+    """Cheap HID item boundary/collection checks, NOT a full Windows HID parser."""
+    i = 0
+    collections = 0
+    maximum_depth = 0
+    count = Counter()
+    report_ids = set()
+    errors = []
+    while i < len(raw):
+        offset = i
+        prefix = raw[i]
+        i += 1
+        if prefix == 0xFE:
+            if i + 2 > len(raw):
+                errors.append(f"Truncated long-item header at offset {offset}")
+                break
+            data_len = raw[i]
+            i += 2  # item size and long-item tag
+            if i + data_len > len(raw):
+                errors.append(f"Truncated long-item payload at offset {offset}")
+                break
+            i += data_len
+            count["long"] += 1
+            continue
+        size = (0, 1, 2, 4)[prefix & 0x03]
+        if i + size > len(raw):
+            errors.append(f"Truncated item payload at offset {offset}")
+            break
+        data = raw[i:i + size]
+        i += size
+        item_type = (prefix >> 2) & 0x03
+        tag = (prefix >> 4) & 0x0F
+        count[(item_type, tag)] += 1
+        if item_type == 0 and tag == 10:  # Collection
+            collections += 1
+            maximum_depth = max(maximum_depth, collections)
+        elif item_type == 0 and tag == 12:  # End Collection
+            collections -= 1
+            if collections < 0:
+                errors.append(f"Unexpected End Collection at offset {offset}")
+                collections = 0
+        elif item_type == 1 and tag == 8:  # Report ID
+            report_id = int.from_bytes(data, "little") if data else 0
+            if report_id == 0:
+                errors.append(f"Invalid Report ID 0 at offset {offset}")
+            elif report_id > 255:
+                errors.append(f"Out-of-range Report ID at offset {offset}")
+            else:
+                report_ids.add(report_id)
+    if collections != 0:
+        errors.append(f"Unclosed Collections: {collections}")
+    if not raw:
+        errors.append("Empty Report Map")
+    return {
+        "bytes": len(raw),
+        "sha256": hashlib.sha256(raw).hexdigest(),
+        "report_ids": sorted(report_ids),
+        "maximum_collection_depth": maximum_depth,
+        "items": sum(count.values()),
+        "warnings": errors,
+    }
+
+
+def print_analysis(raw: bytes) -> None:
+    summary = inspect_map(raw)
+    print(f"Report Map length: {summary['bytes']} bytes")
+    print(f"SHA-256: {summary['sha256']}")
+    print("Report IDs declared: " +
+          (", ".join(f"0x{v:02X}" for v in summary["report_ids"]) or "(none)"))
+    print(f"Maximum collection depth: {summary['maximum_collection_depth']}")
+    print(f"HID item count: {summary['items']}")
+    if summary["warnings"]:
+        for msg in summary["warnings"]:
+            print("Structural warning: " + msg)
+    else:
+        print("No BASIC item-boundary/collection problems found.")
+    print("This inspector does not implement HidP_GetCollectionDescription; "
+          "clean output does NOT prove Windows HID compatibility.")
+
+
+async def read_connected_map(name_prefix: str) -> bytes:
+    if sys.platform != "linux":
+        raise RuntimeError("Live BlueZ read works only on Linux. Use --inspect on Windows.")
+    try:
+        from dbus_next.aio import MessageBus
+        from dbus_next import BusType, Message, MessageType
+    except ImportError as exc:
+        raise RuntimeError("Missing dependency: python3 -m pip install dbus-next") from exc
+    bus = await MessageBus(bus_type=BusType.SYSTEM).connect()
+    try:
+        objects_reply = await bus.call(Message(
+            destination="org.bluez", path="/",
+            interface="org.freedesktop.DBus.ObjectManager",
+            member="GetManagedObjects"))
+        if objects_reply.message_type != MessageType.METHOD_RETURN:
+            raise RuntimeError("BlueZ ObjectManager query failed")
+        paths = find_map_paths(objects_reply.body[0], name_prefix)
+        print(f"Connected/resolved HID Report Map candidates: {len(paths)}")
+        if len(paths) != 1:
+            raise RuntimeError(
+                "Exactly one connected/resolved HID Report Map is required. "
+                "Use --name-prefix for disambiguation, or check BlueZ connection state.")
+        # The GATT read is the ONLY remote interaction; does not change HID state.
+        reply = await bus.call(Message(
+            destination="org.bluez", path=paths[0],
+            interface=CHARACTERISTIC, member="ReadValue",
+            signature="a{sv}", body=[{}]))
+        if reply.message_type != MessageType.METHOD_RETURN:
+            raise RuntimeError("Read-only Report Map GATT read was denied or failed")
+        if not reply.body:
+            raise RuntimeError("BlueZ returned no Report Map payload")
+        return bytes(reply.body[0])
+    finally:
+        bus.disconnect()
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    selection = parser.add_mutually_exclusive_group(required=True)
+    selection.add_argument("--inspect", type=Path,
+                           help="Offline inspection of an existing raw .bin Report Map")
+    selection.add_argument("--output", type=Path,
+                           help="Read an already-connected Linux BlueZ remote and save binary")
+    parser.add_argument("--name-prefix", default="",
+                        help="Optional connected device name prefix; never printed")
+    args = parser.parse_args()
+    try:
+        if args.inspect is not None:
+            raw = args.inspect.read_bytes()
+        else:
+            raw = asyncio.run(read_connected_map(args.name_prefix))
+            # Exclusive create prevents accidentally overwriting other captures.
+            with args.output.open("xb") as out:
+                out.write(raw)
+            print("Saved Report Map to specified local file (no device identifiers printed).")
+        print_analysis(raw)
+        return 0
+    except (OSError, RuntimeError, ValueError) as exc:
+        # Avoid printing exception payloads from BlueZ that might contain addresses.
+        print("Cannot capture/inspect Report Map: " + type(exc).__name__, file=sys.stderr)
+        return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
