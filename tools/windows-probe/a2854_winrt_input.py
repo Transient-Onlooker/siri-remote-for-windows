@@ -126,7 +126,8 @@ async def receive(device, cache, cccd, seconds: int, enable: bool) -> int:
     print(f"  Services status: {status(services_result.status)}")
     if status(services_result.status) != "SUCCESS":
         print("No BLE notifications tested: remote unreachable or service discovery failed.")
-        return 2
+        # Only a transport-level UNREACHABLE permits a bounded retry.
+        return 7 if status(services_result.status) == "UNREACHABLE" else 2
     services = list(services_result.services)
     targets = [s for s in services if str(s.uuid).lower() == HID_SERVICE]
     print(f"  Exposed services={len(services)}, HID 0x1812={len(targets)}")
@@ -249,7 +250,8 @@ async def receive(device, cache, cccd, seconds: int, enable: bool) -> int:
                 pass
 
 
-async def run(name_prefix: str, index: int | None, seconds: int, enable: bool) -> int:
+async def run(name_prefix: str, index: int | None, seconds: int,
+              enable: bool, scan_before: int = 0, attempts: int = 1) -> int:
     if sys.platform != "win32":
         raise RuntimeError("Windows native Python required, NOT WSL.")
     # Reuse the already-tested paired-device enumerator, bypassing Bleak's
@@ -277,15 +279,31 @@ async def run(name_prefix: str, index: int | None, seconds: int, enable: bool) -
             print("Index is NOT a DL1 device; aborting to avoid unrelated access.")
             return 2
         selected = paired[index]
-    print("Opening the already paired DL1 remote (no re-pairing)")
-    device = await bounded(dev_class.from_id_async(selected.device_id), 25)
-    if device is None:
-        print("Windows returned no BLE device for the saved pairing record.")
-        return 2
-    try:
-        return await receive(device, cache, Cccd, seconds, enable)
-    finally:
-        device.close()
+    if scan_before:
+        # The existing scanner handles advertisement signals ONLY, not
+        # pairing. End the scan before attempting a GATT connection.
+        from adv_probe import scan
+        print("Passive advertisement scan BEFORE connecting:")
+        scan_result = await scan(scan_before)
+        if scan_result == 2:
+            print("Advertisement scan failed; proceeding with independent GATT test.")
+
+    for attempt in range(1, attempts + 1):
+        print(f"Opening paired DL1 remote, attempt {attempt}/{attempts} (no re-pairing)")
+        device = await bounded(dev_class.from_id_async(selected.device_id), 25)
+        if device is None:
+            print("Windows returned no BLE device for this pairing record.")
+            return 2
+        try:
+            result = await receive(device, cache, Cccd, seconds, enable)
+        finally:
+            device.close()
+        if result != 7 or attempt == attempts:
+            return result
+        print("GATT UNREACHABLE: waking remote and retrying after 5 seconds.")
+        print("Tap the remote Back button once; no PnP restart or pairing reset.")
+        await asyncio.sleep(5)
+    return 7
 
 
 def main() -> int:
@@ -295,6 +313,10 @@ def main() -> int:
     p.add_argument("--index", type=int,
                    help="Optional paired-device index (only if also DL1)")
     p.add_argument("--seconds", type=int, default=25)
+    p.add_argument("--scan-before", type=int, default=0,
+                   help="Optional passive BLE advertisement scan, seconds (5..30)")
+    p.add_argument("--attempts", type=int, default=1,
+                   help="GATT attempts (1..3), retries only UNREACHABLE")
     p.add_argument("--enable-input", action="store_true",
                    help="Explicitly write previously observed 0xAF to Report ID 0xF0")
     a = p.parse_args()
@@ -302,8 +324,15 @@ def main() -> int:
         p.error("--seconds must be between 5 and 90")
     if not a.name_prefix or len(a.name_prefix) < 2:
         p.error("name prefix must be at least 2 characters")
+    if a.scan_before and not 5 <= a.scan_before <= 30:
+        p.error("--scan-before must be between 5 and 30 (or omitted)")
+    if not 1 <= a.attempts <= 3:
+        p.error("--attempts must be between 1 and 3")
     try:
-        return asyncio.run(run(a.name_prefix, a.index, a.seconds, a.enable_input))
+        return asyncio.run(run(
+            a.name_prefix, a.index, a.seconds, a.enable_input,
+            scan_before=a.scan_before, attempts=a.attempts
+        ))
     except (OSError, RuntimeError, asyncio.TimeoutError, ImportError) as exc:
         print(f"Probe stopped: {safe_exception(exc)}", file=sys.stderr)
         return 2
