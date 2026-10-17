@@ -408,6 +408,33 @@ py -3 tools\protocol\report_map.py --inspect "$env:TEMP\a2854_hidclass_report_ma
 
 \`report_map.py --inspect\` provides a **basic** HID item/collection structure check, not a formal Windows parser equivalent. Even a clean structure would not rule out a semantic incompatibility causing \`STATUS_COULD_NOT_INTERPRET\`. Never upload the raw ETL, PnP instance ID, or raw report descriptor to a public repo without review. The script prints numeric status, descriptor byte count, extraction status, and a proposed local offline command, not the private content.
 
+## 2026-10-17 breakthrough: 38-byte descriptor extracted from exact failed Windows HID child
+
+The owner ran `tools/windows-probe/hidclass_extract_descriptor.ps1 -SaveBinary` against the locally retained **targeted HID restart** ETL, not against the earlier other-HID rundown trace. Actual sanitized output:
+
+```text
+Targeted restart ETL and unique Siri Remote HID child found.
+Exactly matching HIDCLASS Event 3 v2 records: 1
+HIDCLASS DeviceStartStatus: 0xC00000B9
+HIDCLASS declared ReportDescriptorLength: 38
+ReportDescriptor binary source: EventBinary; actual bytes=38
+Descriptor length and actual bytes MATCH for the exact failed Siri Remote HID node.
+Saved validated local binary under TEMP as a2854_hidclass_report_map.bin
+```
+
+**Confirmed:** one ETW event correlates to the exact `mshidumdf` HID child beneath the paired Siri Remote. The event itself reports `DeviceStartStatus=0xC00000B9` and contains a **38-byte** binary `ReportDescriptor` whose actual byte count matches the event's declared `ReportDescriptorLength`. This was saved only to local `%TEMP%\a2854_hidclass_report_map.bin`; neither descriptor contents nor raw ETL nor PnP IDs were published.
+
+**Not confirmed:** 38 bytes may be the transport-supplied complete GATT `0x2A4B` Report Map, a Windows/HIDCLASS view of the descriptor, or a partial/alternative representation. The exact mechanism and why the HID parser rejects/does not start this device are still under investigation. Do not assume the short length alone establishes truncation or corruption. The prior known Linux Report Map `0x2A4B` characteristic existed but was never successfully read in full.
+
+**Immediate offline next step** (does not modify device or driver):
+
+```powershell
+cd "C:\Users\무조림.000\Desktop\코딩\01_working\siri-remote-for-windows"
+py -3 tools\protocol\report_map.py --inspect "$env:TEMP\a2854_hidclass_report_map.bin"
+```
+
+The inspector reports length, hash, report IDs, and *basic* HID item/collection warnings. It does **not** fully reproduce Windows HIDCLASS's parser nor prove USB/BLE HID compliance. Investigate the inspector output before any further tracing or re-pairing. Keep descriptor binary off public GitHub until reviewed.
+
 ## Alternative research branch
 
 If reusing BlueZ is impractical, check Windows driver diagnostic providers and HIDCLASS ETW/WPP availability without touching live driver bindings, before any trace capture. Raw traces may contain addresses/serials; do **not** upload raw ETL or setupapi.dev.log publicly without redaction. Whatever the approach, first validate the descriptor hypothesis before attempting a virtual HID or proprietary transport workaround.
