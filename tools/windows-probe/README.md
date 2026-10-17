@@ -1,6 +1,6 @@
 # Windows-native HID access probe (Phase 1)
 
-**Update:** The remote pairs under a `DL1…` name and is visible in WinRT paired enumeration, but uncached GATT discovery returned `UNREACHABLE` with the link disconnected. Use [BLE advertisement visibility diagnostics](ADVERTISEMENT_DIAGNOSTICS.md) to evaluate wake/advertising before repeating the [read-only GATT diagnostic](GATT_DIAGNOSTICS.md). Do not attempt reads from unrelated HID devices.
+**Update:** A first uncached GATT attempt was `UNREACHABLE`, but the next attempt **connected**, found 7 GATT services including HID `0x1812`, and received `ACCESS_DENIED` when listing HID characteristics. The next read-only step is [GATT `--hid-snapshot` comparison](GATT_DIAGNOSTICS.md) while the remote is connected. See the [BLE advertisement evidence](ADVERTISEMENT_DIAGNOSTICS.md). Do not attempt reads from unrelated HID devices.
 
 **Status:** Diagnostics implemented; **not run against A2854 on native Windows yet**.
 This is a read-only capability test, **not** the Windows Siri Remote mouse application.
