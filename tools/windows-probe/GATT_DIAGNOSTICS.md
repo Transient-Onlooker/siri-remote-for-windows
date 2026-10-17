@@ -42,14 +42,20 @@ A subsequent Windows test detected an HID UUID 0x1812 advertisement among nearby
 
 **Interpretation:** This strongly suggests an OS/user-mode API restriction on the HID service, but does not by itself establish that Windows HIDClass generated a usable interface for A2854. Windows includes a built-in HID-over-GATT transport, and HID input collections can be opened exclusively by system components. Do not attempt driver-protection or security-policy bypasses.
 
+### Connecting reliably before interpreting HID counts
+
+The earlier UNREACHABLE result was followed by a successful GATT session after an advertisement scan. This sequence is an observation, **not proof** that scanning caused success. A [2025 Microsoft Q&A report](https://learn.microsoft.com/en-us/answers/questions/2280559/retry-required-for-getgattservicesasync%28%29-when-con) describes similar failures with BLE private addresses, but the A2854 cause remains unverified.
+
+The optional pre-scan finishes before GATT discovery, and --attempts allows at most three discovery tries, five seconds apart. The tool retries **only UNREACHABLE**, not successful or denied HID access, and reopens the Windows device object on each attempt.
+
 To test whether HID interfaces become visible during an actual connection, from repository root:
 
 ```powershell
 git pull --ff-only
-py -3 tools\windows-probe\gatt_probe.py --index 0 --hid-snapshot
+py -3 tools\windows-probe\gatt_probe.py --index 0 --hid-snapshot --scan-before 10 --attempts 3
 ```
 
-Check the paired device list before assuming the remote is still index 0. The new option prints only counts and coarse VID/PID/usage identifiers, not device paths or Bluetooth addresses. **No new HID interface signature** means none became visible during that capture, not proof that raw BLE is inaccessible by every conceivable API. An additional interface cannot be conclusively attributed to A2854 without correlation.
+If all three attempts show UNREACHABLE, stop and keep the logs. Check the paired device list before assuming the remote is still index 0. The new option prints only counts and coarse VID/PID/usage identifiers, not device paths or Bluetooth addresses. **No new HID interface signature** means none became visible during that capture, not proof that raw BLE is inaccessible by every conceivable API. An additional interface cannot be conclusively attributed to A2854 without correlation.
 
 Microsoft reference: [HID Transport Overview](https://learn.microsoft.com/en-us/windows-hardware/drivers/hid/hid-transports), [HID Architecture](https://learn.microsoft.com/en-us/windows-hardware/drivers/hid/hid-architecture).
 
