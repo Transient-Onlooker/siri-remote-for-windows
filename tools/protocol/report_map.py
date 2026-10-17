@@ -216,7 +216,9 @@ def print_analysis(raw: bytes) -> None:
           "clean output does NOT prove Windows HID compatibility.")
 
 
-async def read_connected_map(name_prefix: str, connect: bool = False) -> bytes:
+async def read_connected_map(
+    name_prefix: str, connect: bool = False, scan_before: float = 0.0
+) -> bytes:
     if sys.platform != "linux":
         raise RuntimeError("Live BlueZ read works only on Linux. Use --inspect on Windows.")
     try:
@@ -260,6 +262,81 @@ async def read_connected_map(name_prefix: str, connect: bool = False) -> bytes:
             return None
         return bytes(reply.body[0])
 
+    async def scan_for_current_advertisement(target, seconds):
+        """Temporarily use LE scan; never print nearby BLE identifiers.
+
+        A cached RSSI value is not proof of a *new* advertisement, so we
+        observe target-specific RSSI PropertiesChanged signals instead.
+        """
+        if seconds <= 0:
+            return
+        adapter = target.rsplit("/dev_", 1)[0]
+        match_rule = (
+            "type='signal',interface='org.freedesktop.DBus.Properties',"
+            "member='PropertiesChanged',path='" + target + "'"
+        )
+        sightings = 0
+
+        def handler(message):
+            nonlocal sightings
+            if (message.message_type == MessageType.SIGNAL
+                    and message.path == target
+                    and message.interface == "org.freedesktop.DBus.Properties"
+                    and message.member == "PropertiesChanged"
+                    and len(message.body) >= 2
+                    and message.body[0] == DEVICE
+                    and "RSSI" in message.body[1]):
+                sightings += 1
+            return False
+
+        bus.add_message_handler(handler)
+        subscribed = False
+        scanning = False
+        try:
+            add_reply = await bus.call(Message(
+                destination="org.freedesktop.DBus",
+                path="/org/freedesktop/DBus",
+                interface="org.freedesktop.DBus",
+                member="AddMatch", signature="s", body=[match_rule]))
+            if add_reply.message_type == MessageType.METHOD_RETURN:
+                subscribed = True
+            scan_reply = await bus.call(Message(
+                destination="org.bluez", path=adapter,
+                interface="org.bluez.Adapter1", member="StartDiscovery"))
+            if scan_reply.message_type == MessageType.METHOD_RETURN:
+                scanning = True
+                print(f"LE discovery session: started for {seconds:g}s.")
+                await asyncio.sleep(seconds)
+            else:
+                print(f"Discovery start: {safe_bluez_error_name(scan_reply)}")
+        finally:
+            if scanning:
+                try:
+                    await bus.call(Message(
+                        destination="org.bluez", path=adapter,
+                        interface="org.bluez.Adapter1",
+                        member="StopDiscovery"))
+                except Exception:
+                    pass
+            if subscribed:
+                try:
+                    await bus.call(Message(
+                        destination="org.freedesktop.DBus",
+                        path="/org/freedesktop/DBus",
+                        interface="org.freedesktop.DBus",
+                        member="RemoveMatch", signature="s", body=[match_rule]))
+                except Exception:
+                    pass
+            bus.remove_message_handler(handler)
+            print(
+                "Fresh RSSI updates for the *previously paired remote* "
+                f"during scan: {sightings}"
+            )
+            print(
+                "Zero updates is inconclusive: BlueZ can suppress duplicate "
+                "advertisements or use a different device identity."
+            )
+
     try:
         objects = await snapshot()
         result = await try_read(objects)
@@ -274,26 +351,27 @@ async def read_connected_map(name_prefix: str, connect: bool = False) -> bytes:
         if len(candidates) != 1:
             raise RuntimeError("A unique previously paired remote is required")
         target = candidates[0]
-        # Explicit opt-in: Device1.Connect only. No bond or driver changes.
+        # Explicit opt-in: existing bond only, no pairing or driver changes.
+        # BlueZ LE connections generally need a recent active advertisement.
+        if scan_before > 0:
+            await scan_for_current_advertisement(target, scan_before)
         for attempt in range(1, 4):
-            print(f"BLE connection/read attempt {attempt}/3; press a remote button to wake it.")
+            print(f"BLE connection/read attempt {attempt}/3.")
             diag = {"read_attempts": 0, "read_status": "not-attempted"}
             ever = {
                 "connected": False, "resolved": False,
                 "hid_services": 0, "map_chars": 0, "report_chars": 0
             }
-            try:
-                response = await asyncio.wait_for(bus.call(Message(
-                    destination="org.bluez", path=target,
-                    interface=DEVICE, member="Connect")), timeout=15)
-                connect_status = ("success" if response.message_type
-                                  == MessageType.METHOD_RETURN
-                                  else safe_bluez_error_name(response))
-            except asyncio.TimeoutError:
-                connect_status = "timeout"
-
-            # Track EVER observed states, not just the last fleeting snapshot.
-            for _ in range(16):
+            # Do not WAIT for Connect() to complete before watching GATT:
+            # previously, a transient connection could appear and disappear
+            # during the 15s wait and be missed entirely by the snapshots.
+            loop = asyncio.get_running_loop()
+            started = loop.time()
+            connect_task = asyncio.create_task(bus.call(Message(
+                destination="org.bluez", path=target,
+                interface=DEVICE, member="Connect")))
+            connect_status = "pending"
+            while loop.time() - started < 19.0:
                 objects = await snapshot()
                 current = remote_gatt_state(objects, target)
                 ever["connected"] |= current["connected"]
@@ -304,7 +382,28 @@ async def read_connected_map(name_prefix: str, connect: bool = False) -> bytes:
                 if result is not None:
                     print(f"Attempt {attempt}: Report Map read success.")
                     return result
-                await asyncio.sleep(0.25)
+                if connect_task.done():
+                    try:
+                        response = connect_task.result()
+                        connect_status = (
+                            "success" if response.message_type
+                            == MessageType.METHOD_RETURN
+                            else safe_bluez_error_name(response)
+                        )
+                    except Exception:
+                        connect_status = "request-error"
+                    if connect_status not in ("success", "AlreadyConnected"):
+                        # Give services a small post-failure observation window.
+                        if loop.time() - started >= 4.0:
+                            break
+                await asyncio.sleep(0.20)
+            pending = not connect_task.done()
+            if pending:
+                connect_task.cancel()
+                # A cancelled D-Bus await does not necessarily cancel the
+                # underlying BlueZ connection attempt. Avoid stacking retries
+                # on top of an ongoing operation.
+                connect_status = "pending-after-19s"
             print(
                 f"Attempt {attempt} diagnostic: Connect={connect_status}; "
                 f"seen Connected={ever['connected']}, "
@@ -315,6 +414,9 @@ async def read_connected_map(name_prefix: str, connect: bool = False) -> bytes:
                 f"map reads={diag['read_attempts']}, "
                 f"last read status={diag['read_status']}"
             )
+            if pending:
+                print("Connect still pending; not issuing overlapping retries.")
+                break
             if attempt < 3:
                 await asyncio.sleep(1)
         raise RuntimeError("Report Map was not readable in three bounded attempts")
@@ -333,14 +435,21 @@ def main() -> int:
                         help="Optional device name prefix; never printed")
     parser.add_argument("--connect", action="store_true",
                         help="Linux only: connect one already paired remote (max 3 tries)")
+    parser.add_argument("--scan-before", type=float, default=0.0,
+                        metavar="SECONDS",
+                        help="Linux only: BLE discovery before connection (1 to 20s)")
     args = parser.parse_args()
     if args.connect and (args.output is None or not args.name_prefix):
         parser.error("--connect requires --output and a unique --name-prefix")
+    if args.scan_before and (not args.connect or not 1 <= args.scan_before <= 20):
+        parser.error("--scan-before requires --connect and duration of 1-20 seconds")
     try:
         if args.inspect is not None:
             raw = args.inspect.read_bytes()
         else:
-            raw = asyncio.run(read_connected_map(args.name_prefix, connect=args.connect))
+            raw = asyncio.run(read_connected_map(
+                args.name_prefix, connect=args.connect,
+                scan_before=args.scan_before))
             # Exclusive create prevents accidentally overwriting other captures.
             with args.output.open("xb") as out:
                 out.write(raw)
