@@ -1,6 +1,6 @@
-# Resume plan — paused after 2026-10-17 experiment
+# Windows port plan — resumed 2026-10-17
 
-**Checkpoint:** Linux hardware I/O succeeded; native Windows port not started. As of this checkpoint, focus has moved to a separate ESP32 IR air-conditioner project.
+**Checkpoint:** Linux hardware I/O succeeded. Windows-native development resumed with a read-only [HID capability probe](../../tools/windows-probe/README.md) and decoder fixture tests; no native A2854 hardware I/O has been verified. The historical ESP32 IR pivot is documented in the dated handoff.
 
 ## Phase 0 — documentation [complete for archive]
 
@@ -14,7 +14,9 @@
 
 - [ ] Return Intel AX200 from USB/IP to Windows, confirm normal Bluetooth works.
 - [ ] Pair/recognize A2854 in Windows; capture sanitized diagnostics.
-- [ ] Test direct Windows HID report enumeration and reads.
+- [x] Add Windows CI smoke job for Python imports/help and offline fixture tests (CI result not yet verified).
+- [x] Implement read-only HID interface enumerator, `ReadFile` probe and sanitized 0xFB/0xFC fixture tests (code only).
+- [ ] **On Windows hardware:** run enumerator and verify actual HID report reads.
 - [ ] Test GATT service visibility / report reference descriptors if HID fails.
 - [ ] Prove actual `0xFB` and `0xFC` button/touch receipt natively, including report enable.
 - [ ] Select proven transport backend or document a clear no-go.
