@@ -27,7 +27,9 @@
 - [x] Implement read-only [PnP relationship correlation](../../tools/windows-probe/PNP_CORRELATION.md) via private PnP ContainerId/Parent (synthetic tests only).
 - [x] Run PnP correlation locally: BLE HIDClass/mshidumdf problem-code-10 node is **descended from Siri Remote's unique DL1 Bluetooth PnP parent**; the healthy BLE HID node does not match.
 - [x] Add [read-only remote-specific Code 10 details and Kernel-PnP 411 diagnostic](../../tools/windows-probe/PNP_FAILURE.md), with synthetic Windows regression tests.
-- [ ] Inspect the failed HID child node's ProblemStatus NTSTATUS and any exact-match event 411, then evaluate the least-invasive repair path. No driver/bond changes yet.
+- [x] Confirm on the remote's own HID child: ProblemStatus `0xC00000B9 (STATUS_COULD_NOT_INTERPRET)` and matching Kernel-PnP 411 with the same NTSTATUS (2026-10-17 12:53:25 local). This is consistent with, but does **not prove**, a HID report-descriptor parsing error.
+- [x] Record [descriptor parsing hypothesis and evidence chain](HID_DESCRIPTOR_FAILURE.md), and add a Linux/BlueZ read-only HID Report Map (0x2A4B) capture and offline bounds checker with tests.
+- [ ] Obtain the actual A2854 Report Map from an already-connected authorized BlueZ session, OR pursue a safe HIDCLASS trace; isolate the offending HID parser condition without changing Windows drivers.
 - [x] Add Windows CI smoke job for Python imports/help and offline fixture tests — [run 38997823005 passed](https://github.com/Transient-Onlooker/siri-remote-for-windows/actions/runs/38997823005). This **does not** confirm actual HID enumeration or A2854 input access.
 - [x] Implement read-only HID interface enumerator, `ReadFile` probe and sanitized 0xFB/0xFC fixture tests (code only).
 - [ ] **On Windows hardware:** run enumerator and verify actual HID report reads.
