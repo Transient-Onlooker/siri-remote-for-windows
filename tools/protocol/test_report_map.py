@@ -141,6 +141,28 @@ class ReportMapTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("--connect requires --output", result.stderr)
 
+    def test_observation_duration_is_bounded(self):
+        script = Path(__file__).with_name("report_map.py")
+        args = [sys.executable, str(script), "--output", "irrelevant.bin",
+                "--name-prefix", "DL1", "--connect"]
+        for extra in (["--observe-seconds", "91"],
+                      ["--observe-seconds", "0"],
+                      ["--attempts", "4"],
+                      ["--attempts", "0"]):
+            proc = subprocess.run(args + extra, capture_output=True,
+                                  text=True, timeout=10)
+            self.assertNotEqual(proc.returncode, 0)
+            self.assertIn("--observe-seconds must be 8-90", proc.stderr)
+
+    def test_long_observation_opt_in_only(self):
+        script = Path(__file__).with_name("report_map.py")
+        proc = subprocess.run(
+            [sys.executable, str(script), "--inspect", "missing.bin",
+             "--observe-seconds", "45", "--attempts", "1"],
+            capture_output=True, text=True, timeout=10)
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn("require --connect", proc.stderr)
+
     def test_scan_duration_is_bounded(self):
         script = Path(__file__).with_name("report_map.py")
         result = subprocess.run(
