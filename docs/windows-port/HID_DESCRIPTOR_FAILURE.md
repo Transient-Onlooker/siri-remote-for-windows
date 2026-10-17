@@ -351,6 +351,26 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:TEMP\hidclass_trac
 
 Only `Source=NamedXML` or `Source=FullTemplate` gives meaningful start-status and correlation rows; `Source=LayoutUnresolved` is **inconclusive**. Inspect counts to determine the next trustworthy decoding approach without requesting raw ETL upload.
 
+## 2026-10-17 Event 3 v2 decoded, but failed A2854 HID child was NOT represented
+
+The owner reran the fixed read-only status inspector against the same locally saved ETL. All **10** HIDCLASS Event ID 3 v2 records now decode with **named XML** (21 actual fields, vs 32 in the current provider template). All 10 yielded \`DeviceStartStatus=0x00000000\` and \`Attribution=OtherPnP\` (event path matched a known Windows PnP node that **was not** a descendant of the unique Siri Remote Bluetooth anchor). The ten descriptor lengths were 109, 170, 218, 77, 343, 63, 151, 67, 381 and 35 bytes.
+
+This means **none of the previously captured event snapshots can be ascribed to the failed A2854 HID child**. In particular, do **not** use any of those ten ReportDescriptors as the Siri Remote's descriptor or infer that A2854 HID started successfully. The actual remote child remains independently confirmed \`mshidumdf\`, Code 10 / \`0xC00000B9\`. ETW rundown of other, already-started HID nodes does not demonstrate a fresh A2854 driver-start attempt.
+
+For a more discriminating experiment, the repository now provides [\`tools/windows-probe/hidclass_restart_trace.ps1\`](../../tools/windows-probe/hidclass_restart_trace.ps1), an **explicitly opt-in PnP-state-changing** trace. It verifies a *unique* DL1/Siri Remote Bluetooth ancestor and *one* BTHLEDEVICE HIDClass child of that anchor having **ProblemCode=10**, **Service=mshidumdf**, and **ProblemStatus=0xC00000B9**. It refuses to restart anything if this evidence differs. It starts a short manifested HIDCLASS ETW session and invokes Windows \`pnputil /restart-device\` on **only that exact child InstanceId**; there is no \`/deviceid\` broad match, no \`/reboot\`, no \`/remove-device\`, no host Bluetooth adapter change, no re-pair. It then reads local status, sanitizes ETW match counts and Kernel-PnP 411 statuses. The ETL stays on the owner's PC and must not be posted publicly.
+
+**Administrator Windows PowerShell**, explicitly opting into a targeted HID child restart:
+
+\`\`\`powershell
+cd "C:\Users\무조림.000\Desktop\코딩\01_working\siri-remote-for-windows"
+git fetch origin main
+git show origin/main:tools/windows-probe/hidclass_restart_trace.ps1 |
+    Set-Content "$env:TEMP\hidclass_restart_trace.ps1" -Encoding UTF8
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:TEMP\hidclass_restart_trace.ps1" -Execute
+\`\`\`
+
+The trace reinitializes only the already-failed remote HID child; Windows PnP restart may still fail or leave Code 10 unchanged. If no event matches, the absence remains inconclusive; consider a more targeted **WPP HIDCLASS parser** trace or obtaining the true report map from a controlled bonded Linux session **only if** separately justified, rather than restarting the whole adapter or deleting the Windows pairing. [Microsoft PnPUtil command syntax](https://learn.microsoft.com/en-us/windows-hardware/drivers/devtest/pnputil-command-syntax) documents \`/restart-device <instance ID>\`.
+
 ## Alternative research branch
 
 If reusing BlueZ is impractical, check Windows driver diagnostic providers and HIDCLASS ETW/WPP availability without touching live driver bindings, before any trace capture. Raw traces may contain addresses/serials; do **not** upload raw ETL or setupapi.dev.log publicly without redaction. Whatever the approach, first validate the descriptor hypothesis before attempting a virtual HID or proprietary transport workaround.
