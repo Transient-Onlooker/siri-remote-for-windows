@@ -310,6 +310,29 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:TEMP\hidclass_trac
 
 The next step after schema inspection is to decide whether **specific safe numeric error/status/offset fields** can be extracted and whether the events can be correlated to the known broken Siri Remote PnP HID node **without printing or publishing unique instance paths**. Do not re-pair or reset Bluetooth based on the 12-event count alone.
 
+## 2026-10-17 HIDCLASS ETL schema revealed status and descriptor bytes
+
+The **same ETL** was inspected on the owner's Windows machine, using `hidclass_trace_inspect.ps1`. The manifested event ID **3 v2** schema includes:
+
+- `DeviceStartStatus:win:UInt32` (**potentially directly informative for Code 10**)
+- `DeviceInstancePath:win:UnicodeString` (private; **do not print**)
+- `ReportDescriptorLength:win:UInt32` and `ReportDescriptor:win:Binary` (the **full descriptor may already be in this ETL**)
+- `VendorID`, `ProductID`, `DeviceServiceName`, `CollectionCount`, device power state, etc.
+
+Observed trace: ID 1 v0 once, **ID 3 v2 ten times**, ID 2 v0 once. All printed `SecondsFromFirst=0`: records are effectively simultaneous at the supplied millisecond display precision, perhaps a provider rundown/snapshot, **not demonstrated to follow each button press**. Events may describe other HID devices. Do not guess that one of these ten is A2854 before attribution.
+
+A new [local, read-only safe status parser](../../tools/windows-probe/hidclass_trace_status.ps1) reads **numeric** `DeviceStartStatus`, `ReportDescriptorLength`, and correlates each event's private `DeviceInstancePath` with a local PnP node by **exact** `InstanceId`, then checks parent ancestry to the **unique DL1/Siri Remote Bluetooth node**. No paths/addresses/descriptor bytes are emitted. **UnmatchedPath means unproven attribution**, not a negative proof. Re-run on the same Windows account whose TEMP stores ETL:
+
+```powershell
+cd "C:\Users\무조림.000\Desktop\코딩\01_working\siri-remote-for-windows"
+git fetch origin main
+git show origin/main:tools/windows-probe/hidclass_trace_status.ps1 |
+    Set-Content "$env:TEMP\hidclass_trace_status.ps1" -Encoding UTF8
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:TEMP\hidclass_trace_status.ps1"
+```
+
+This extraction neither starts new tracing nor restarts any device. If the event is **RemoteDescendant** and shows `0xC00000B9` plus a nonzero descriptor length, that is strong evidence that the HIDCLASS manifested ETW snapshot observed the same failure and may contain useful descriptor bytes for later local offline parsing. It does **not** prove malformed bytes until actual parsing or driver trace confirms it. If no remote-descendant event matches, leave linkage unresolved and develop a more selective correlation method; do not claim another device's error is Siri Remote's.
+
 ## Alternative research branch
 
 If reusing BlueZ is impractical, check Windows driver diagnostic providers and HIDCLASS ETW/WPP availability without touching live driver bindings, before any trace capture. Raw traces may contain addresses/serials; do **not** upload raw ETL or setupapi.dev.log publicly without redaction. Whatever the approach, first validate the descriptor hypothesis before attempting a virtual HID or proprietary transport workaround.
