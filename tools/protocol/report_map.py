@@ -217,7 +217,8 @@ def print_analysis(raw: bytes) -> None:
 
 
 async def read_connected_map(
-    name_prefix: str, connect: bool = False, scan_before: float = 0.0
+    name_prefix: str, connect: bool = False, scan_before: float = 0.0,
+    observe_seconds: float = 19.0, attempts: int = 3
 ) -> bytes:
     if sys.platform != "linux":
         raise RuntimeError("Live BlueZ read works only on Linux. Use --inspect on Windows.")
@@ -355,8 +356,8 @@ async def read_connected_map(
         # BlueZ LE connections generally need a recent active advertisement.
         if scan_before > 0:
             await scan_for_current_advertisement(target, scan_before)
-        for attempt in range(1, 4):
-            print(f"BLE connection/read attempt {attempt}/3.")
+        for attempt in range(1, attempts + 1):
+            print(f"BLE connection/read attempt {attempt}/{attempts}.")
             diag = {"read_attempts": 0, "read_status": "not-attempted"}
             ever = {
                 "connected": False, "resolved": False,
@@ -373,7 +374,7 @@ async def read_connected_map(
                 destination="org.bluez", path=target,
                 interface=DEVICE, member="Connect")))
             connect_status = "pending"
-            while loop.time() - started < 19.0:
+            while loop.time() - started < observe_seconds:
                 objects = await snapshot()
                 current = remote_gatt_state(objects, target)
                 samples["total"] += 1
@@ -409,7 +410,7 @@ async def read_connected_map(
                 # A cancelled D-Bus await does not necessarily cancel the
                 # underlying BlueZ connection attempt. Avoid stacking retries
                 # on top of an ongoing operation.
-                connect_status = "pending-after-19s"
+                connect_status = "pending-after-observation"
             print(
                 f"Attempt {attempt} diagnostic: Connect={connect_status}; "
                 f"seen Connected={ever['connected']}, "
@@ -425,9 +426,9 @@ async def read_connected_map(
             if pending:
                 print("Connect still pending; not issuing overlapping retries.")
                 break
-            if attempt < 3:
+            if attempt < attempts:
                 await asyncio.sleep(1)
-        raise RuntimeError("Report Map was not readable in three bounded attempts")
+        raise RuntimeError("Report Map was not readable in bounded attempts")
     finally:
         bus.disconnect()
 
@@ -446,18 +447,29 @@ def main() -> int:
     parser.add_argument("--scan-before", type=float, default=0.0,
                         metavar="SECONDS",
                         help="Linux only: BLE discovery before connection (1 to 20s)")
+    parser.add_argument("--observe-seconds", type=float, default=19.0,
+                        metavar="SECONDS",
+                        help="Linux: observe connection/service resolution (8 to 90s)")
+    parser.add_argument("--attempts", type=int, default=3,
+                        help="Linux: bounded connection attempts (1 to 3)")
     args = parser.parse_args()
     if args.connect and (args.output is None or not args.name_prefix):
         parser.error("--connect requires --output and a unique --name-prefix")
     if args.scan_before and (not args.connect or not 1 <= args.scan_before <= 20):
         parser.error("--scan-before requires --connect and duration of 1-20 seconds")
+    if not (8 <= args.observe_seconds <= 90) or not (1 <= args.attempts <= 3):
+        parser.error("--observe-seconds must be 8-90 and --attempts must be 1-3")
+    if not args.connect and (args.observe_seconds != 19 or args.attempts != 3):
+        parser.error("--observe-seconds/--attempts require --connect")
     try:
         if args.inspect is not None:
             raw = args.inspect.read_bytes()
         else:
             raw = asyncio.run(read_connected_map(
                 args.name_prefix, connect=args.connect,
-                scan_before=args.scan_before))
+                scan_before=args.scan_before,
+                observe_seconds=args.observe_seconds,
+                attempts=args.attempts))
             # Exclusive create prevents accidentally overwriting other captures.
             with args.output.open("xb") as out:
                 out.write(raw)
@@ -469,7 +481,7 @@ def main() -> int:
         # Our own fixed RuntimeError strings are safe, but arbitrary D-Bus
         # exception messages may contain private hardware identifiers.
         if isinstance(exc, RuntimeError) and str(exc) in {
-            "Report Map was not readable in three bounded attempts",
+            "Report Map was not readable in bounded attempts",
             "A unique previously paired remote is required",
             "BlueZ ObjectManager query failed",
         }:
