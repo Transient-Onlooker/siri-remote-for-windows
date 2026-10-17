@@ -15,9 +15,12 @@
 - [x] Return Intel AX200 from USB/IP to Windows (`Not shared` / Windows PnP `OK` confirmed by user).
 - [~] A2854 is paired in Windows, briefly displayed battery level, then disconnected; WinRT paired enumeration confirms its `DL1…` name. Physical GATT/HID access remains unknown.
 - [x] Add a [paired-device WinRT GATT probe](../../tools/windows-probe/GATT_DIAGNOSTICS.md) to distinguish service visibility, `0x1812` access, and GATT errors (code only).
-- [x] Native Windows WinRT paired enumeration found the remote; `from_id_async` succeeded, but uncached GATT discovery returned `UNREACHABLE`, connection stayed `DISCONNECTED` (2026-10-17). **No HID permission/access conclusion.**
+- [x] Native Windows WinRT paired enumeration found the remote; `from_id_async` succeeded, but uncached GATT discovery returned `UNREACHABLE`, connection stayed `DISCONNECTED` (2026-10-17). **Initial connectivity failure only, superseded by the later successful GATT session; see subsequent findings.**
 - [x] Implement [read-only BLE advertisement detection](../../tools/windows-probe/ADVERTISEMENT_DIAGNOSTICS.md) and offline classification/privacy tests.
-- [ ] Test remote advertisement while tapping/holding buttons; retry uncached GATT once after wake.
+- [x] Windows advertisement scan saw HID 0x1812 once among seven BLE identities (204 matching events; identity not conclusively attributed to remote).
+- [x] Next uncached GATT attempt succeeded: 7 services, connection `CONNECTED`, HID service 0x1812 found but characteristic discovery `ACCESS_DENIED`.
+- [x] Add `--hid-snapshot` to compare Windows HID interfaces before and during GATT access while keeping device paths private.
+- [ ] On Windows, run GATT `--hid-snapshot` and compare with original 20-interface baseline; inspect HIDClass/PnP enumeration if needed.
 - [x] Add Windows CI smoke job for Python imports/help and offline fixture tests — [run 38997823005 passed](https://github.com/Transient-Onlooker/siri-remote-for-windows/actions/runs/38997823005). This **does not** confirm actual HID enumeration or A2854 input access.
 - [x] Implement read-only HID interface enumerator, `ReadFile` probe and sanitized 0xFB/0xFC fixture tests (code only).
 - [ ] **On Windows hardware:** run enumerator and verify actual HID report reads.
