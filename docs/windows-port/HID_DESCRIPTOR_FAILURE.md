@@ -494,6 +494,10 @@ The successful basic item/collection framing check was **not** a semantic HID pa
 
 References: [USB-IF HID specification](https://usb.org/hid), [WebHID descriptor parsing description / local item reset](https://hid.spec.whatwg.org/), [Microsoft HidP_GetCollectionDescription](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/hidpddi/nf-hidpddi-hidp_getcollectiondescription), [Windows capability arrays](https://learn.microsoft.com/en-us/windows-hardware/drivers/hid/value-capability-arrays).
 
+## Follow-up: controlled offline HID descriptor variants (2026-10-17)
+
+See [HID_DESCRIPTOR_VARIANT_EXPERIMENT.md](HID_DESCRIPTOR_VARIANT_EXPERIMENT.md) for the eight isolated variants, local-only generation commands, and independent Windows CI tests with a synthetic descriptor. All eight synthetic shapes parsed in hid-parser 0.1.0; a single local Usage yielded an inferred 1-byte Input instead of 17 bytes, while an explicit Usage range preserved 17 bytes. This **does not** demonstrate Windows HIDCLASS acceptance or identify the exact reason for Code 10. The A2854 original .bin has not been committed or uploaded.
+
 ## Alternative research branch
 
 If reusing BlueZ is impractical, check Windows driver diagnostic providers and HIDCLASS ETW/WPP availability without touching live driver bindings, before any trace capture. Raw traces may contain addresses/serials; do **not** upload raw ETL or setupapi.dev.log publicly without redaction. Whatever the approach, first validate the descriptor hypothesis before attempting a virtual HID or proprietary transport workaround.
