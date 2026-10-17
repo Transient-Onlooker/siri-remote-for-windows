@@ -1,8 +1,8 @@
 > **Windows fork checkpoint (2026-10-17): documentation/handoff complete; Phase 1 Windows HID diagnostic probe added (not hardware-validated).**
 >
-> This fork targets a **native Windows Bluetooth mouse/media remote** for Siri Remote A2854, **without WSL, usbipd, or Linux at runtime**. The application source remains the upstream Linux CLI. A separate Windows read-only HID capability probe now exists at [tools/windows-probe](tools/windows-probe/README.md). Successful real-device Linux BLE/touch/button experiments **do not** imply native Windows support.
+> This fork targets a **native Windows Bluetooth mouse/media remote** for Siri Remote A2854, **without WSL, usbipd, or Linux at runtime**. The application source remains the upstream Linux CLI. Separate read-only Windows diagnostics now cover [HID interfaces](tools/windows-probe/README.md) and [paired BLE/WinRT GATT visibility](tools/windows-probe/GATT_DIAGNOSTICS.md); neither has been hardware-validated. Successful real-device Linux BLE/touch/button experiments **do not** imply native Windows support.
 >
-> **Start here:** [Windows probe](tools/windows-probe/README.md) · [인수인계 (Korean)](HANDOFF_2026-10-17.md) · [Windows design docs](docs/windows-port/README.md) · [Next steps](docs/windows-port/NEXT_STEPS.md).
+> **Start here:** [Windows GATT diagnostics](tools/windows-probe/GATT_DIAGNOSTICS.md) · [Windows HID probe](tools/windows-probe/README.md) · [인수인계 (Korean)](HANDOFF_2026-10-17.md) · [Windows design docs](docs/windows-port/README.md) · [Next steps](docs/windows-port/NEXT_STEPS.md).
 >
 > ---
 >
