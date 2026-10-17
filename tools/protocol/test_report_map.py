@@ -4,7 +4,8 @@ import unittest
 from types import SimpleNamespace
 
 from report_map import (HID_SERVICE, REPORT_MAP, find_map_paths,
-                        find_bonded_device_paths, inspect_map)
+                        find_bonded_device_paths, inspect_map,
+                        remote_gatt_state, safe_bluez_error_name)
 
 
 def v(x):
@@ -82,6 +83,40 @@ class ReportMapTests(unittest.TestCase):
             ["/org/bluez/hci0/dev_private1"])
         self.assertEqual(find_bonded_device_paths(objects, ""), [])
         self.assertEqual(find_bonded_device_paths(objects, "missing"), [])
+
+    def test_sanitized_gatt_stage_counts_for_fleeting_connection(self):
+        device = "/org/bluez/hci0/dev_PRIVATE_ADDRESS"
+        svc = device + "/service0034"
+        states = {
+            device: {"org.bluez.Device1": {
+                "Name": v("DL1PRIVATE_SERIAL"), "Paired": v(True),
+                "Connected": v(True), "ServicesResolved": v(False)}},
+            svc: {"org.bluez.GattService1": {"UUID": v(HID_SERVICE)}},
+            svc + "/char0040": {"org.bluez.GattCharacteristic1": {
+                "UUID": v(REPORT_MAP)}},
+            svc + "/char0041": {"org.bluez.GattCharacteristic1": {
+                "UUID": v("00002a4d-0000-1000-8000-00805f9b34fb")}},
+        }
+        result = remote_gatt_state(states, device)
+        self.assertEqual(result, {
+            "connected": True, "resolved": False, "hid_services": 1,
+            "map_chars": 1, "report_chars": 1})
+        self.assertNotIn("PRIVATE", str(result))
+        states[device]["org.bluez.Device1"]["Connected"] = v(False)
+        self.assertFalse(remote_gatt_state(states, device)["connected"])
+
+    def test_error_name_filter_never_emits_device_addresses(self):
+        self.assertEqual(safe_bluez_error_name(
+            SimpleNamespace(error_name="org.bluez.Error.NotReady")),
+            "NotReady")
+        self.assertEqual(safe_bluez_error_name(
+            SimpleNamespace(error_name="org.bluez.Error.Failed_PRIVATE_DEVICE")),
+            "other-error")
+        self.assertEqual(safe_bluez_error_name(
+            SimpleNamespace(error_name="org.freedesktop.DBus.Error.NoReply")),
+            "NoReply")
+        self.assertEqual(safe_bluez_error_name(SimpleNamespace(error_name=None)),
+                         "other-error")
 
     def test_no_hid_service_no_candidate(self):
         path = "/org/bluez/hci0/dev_11_22_33_44_55_66"
