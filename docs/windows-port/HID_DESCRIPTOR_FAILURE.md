@@ -461,6 +461,39 @@ py -3 -c "import os,pathlib; b=(pathlib.Path(os.environ['TEMP'])/'a2854_hidclass
 
 Determine exact HID item semantics (Usage Page/Usage, collection, Report Size/Count, Input/Output/Feature) from the actual sequence. Microsoft [HidP_GetCollectionDescription](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/hidpddi/nf-hidpddi-hidp_getcollectiondescription) documents `STATUS_COULD_NOT_INTERPRET` as a possible descriptor parsing error, but ETW's status does not yet pinpoint a specific offending item.
 
+## 2026-10-17 byte-level decoding of Windows-captured 38-byte A2854 HID Report Descriptor
+
+The owner inspected the local, exact-remote-correlated 38-byte `%TEMP%\a2854_hidclass_report_map.bin` (SHA-256 `6f9795ae87c7bcfcba0d50c38cbde6abf5163f78e1299cc23dc110795bc57f49`). A direct offline hex dump reveals **one vendor-defined top-level application collection** and two report IDs.
+
+The complete descriptor binary stays on the owner's machine; this note deliberately lists only minimal relevant item subsequences and semantics, not all 38 raw bytes.
+
+| Byte offset (zero-based) | Bytes | Meaning |
+| --- | --- | --- |
+| 0 | `06 00 FF` | Usage Page vendor-defined `0xFF00` |
+| 3 | `09 0B` | Local Usage `0x0B` applied to following Application Collection |
+| 5 | `A1 01` | Collection(Application) |
+| 7–10 | `06 00 FF 09 0B` | Vendor Page `0xFF00`, local Usage `0x0B` |
+| 12–14 | `15 00 26 FF 00` | Logical min 0, max 255 |
+| 17 | `75 32` | **Report Size = 0x32 = 50 bits** (NOT 32 decimal) |
+| 19 | `96 06 00` | Report Count 6 |
+| 22–24 | `85 B8 B2 01 00` | Feature report ID `0xB8`; Feature flags `0x0001` = Constant/Array/Absolute, bit-field |
+| 27–34 | `85 04 75 08 96 11 00 82 22 01` | Input report ID `0x04`; 8-bit cells ×17; flags `0x0122` = Data/Variable/Absolute/No Preferred State/**Buffered Bytes** |
+| 37 | `C0` | End Collection |
+
+Widths derived from the descriptor: ID `0xB8` Feature has **300 payload bits** (6×50), rounded up to **38 payload bytes** (+1-byte report ID = **39 bytes**); ID `0x04` Input has 17×8 = **136 payload bits / 17 bytes** (+1-byte report ID = **18 bytes**).
+
+### Potential incompatibilities, ranked for investigation—not established causal defects
+
+1. **Missing local Usage for Data/Variable Input**: The second `09 0B` Usage is consumed by the preceding **Feature** main item. Under HID local-state rules, Local items reset after each Main item; **no new Usage or Usage range** appears before `82 22 01` Input. Vendor-defined collection Usage does not by itself supply a local Usage for this variable input. This is semantically suspicious; whether `HidP_GetCollectionDescription` specifically rejects it is unknown.
+2. **Unusual 50-bit fields on constant Feature**: `0x75 0x32` creates 6×50 bits, i.e. a 300-bit, non-byte-aligned Constant Feature payload. HID fields can be bit-packed, so non-byte alignment or report size >32 **alone is not sufficient proof of invalidity**. A 50-bit size deserves a *Windows-specific* compatibility test.
+3. **Report ID mismatch with prior Linux event notifications**: This descriptor has `0x04` Input and `0xB8` Feature only, while earlier Linux session handled vendor reports `0xFB` (buttons) and `0xFC` (touch). Do not assume the event descriptor is the complete over-the-air GATT `0x2A4B` map or that the difference causes start failure without a raw GATT capture and Report Reference correlation.
+
+The successful basic item/collection framing check was **not** a semantic HID parser test. The contemporaneous exact-node Windows HIDCLASS ETW `DeviceStartStatus=0xC00000B9` remains proven, while the offending byte or precise Windows parser rule remains **unproven**. There is no evidence of a BLE bond problem in Windows's successful 7-service GATT discovery; prior `ACCESS_DENIED` against HID characteristics may reflect OS ownership and need not indicate transport corruption.
+
+**Proposed next investigation**: Reproduce HID parser acceptance **offline** with alternate, isolated descriptor variants (one change at a time: add an explicit Input Usage; adjust 50-bit constant Feature size/count) under a supported Windows HID test driver/VM—not by patching the live remote, injecting reports into Windows, or circumventing Bluetooth HID access controls. Alternatively obtain a safe, locally redacted HIDCLASS **WPP parser error offset** if supported to identify the actual failing item. Only after identifying the defect should a compatibility architecture (driver, corrected virtual HID, or another supported input mechanism) be chosen.
+
+References: [USB-IF HID specification](https://usb.org/hid), [WebHID descriptor parsing description / local item reset](https://hid.spec.whatwg.org/), [Microsoft HidP_GetCollectionDescription](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/hidpddi/nf-hidpddi-hidp_getcollectiondescription), [Windows capability arrays](https://learn.microsoft.com/en-us/windows-hardware/drivers/hid/value-capability-arrays).
+
 ## Alternative research branch
 
 If reusing BlueZ is impractical, check Windows driver diagnostic providers and HIDCLASS ETW/WPP availability without touching live driver bindings, before any trace capture. Raw traces may contain addresses/serials; do **not** upload raw ETL or setupapi.dev.log publicly without redaction. Whatever the approach, first validate the descriptor hypothesis before attempting a virtual HID or proprietary transport workaround.
