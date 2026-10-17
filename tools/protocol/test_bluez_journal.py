@@ -68,9 +68,9 @@ class JournalTests(unittest.TestCase):
     def test_safe_timeline_output_for_mixed_events(self):
         private = "10:B9:C4:2D:07:8E"
         events = (
-            f"{private} GATT service discovery failed status: 0x0a\\n"
-            f"{private} connection aborted reason: 0x13\\n"
-            "Failed to register codec endpoint\\n"
+            f"{private} GATT service discovery failed status: 0x0a\n"
+            f"{private} connection aborted reason: 0x13\n"
+            "Failed to register codec endpoint\n"
         )
         response = SimpleNamespace(returncode=0, stdout=events)
         with patch("bluez_journal.subprocess.run", return_value=response) as run:
