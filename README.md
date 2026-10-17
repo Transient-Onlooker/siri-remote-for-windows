@@ -1,3 +1,11 @@
+> **Windows fork checkpoint (2026-10-17): documentation/handoff done; native implementation NOT started.**
+>
+> This fork targets a **native Windows Bluetooth mouse/media remote** for Siri Remote A2854, **without WSL, usbipd, or Linux at runtime**. The source currently remains the upstream Linux CLI. Successful real-device Linux BLE/touch/button experiments **do not** imply native Windows support.
+>
+> **Start here:** [인수인계 (Korean)](HANDOFF_2026-10-17.md) · [Windows design docs](docs/windows-port/README.md) · [Next steps](docs/windows-port/NEXT_STEPS.md).
+>
+> ---
+>
 # siri-remote
 
 A Linux CLI for the 3rd-generation Apple TV Siri Remote over Bluetooth Low Energy: pair it, stream its events, render its live state as a TUI, dump raw HID frames, and republish its microphone as a PipeWire `Audio/Source`.

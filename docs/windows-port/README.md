@@ -10,6 +10,11 @@ The original application successfully receives remote control and touchpad event
 
 As of 2026-10-17, the remote was successfully tested on Linux in WSL2. **A Windows-native BLE/HID implementation has not been built or validated.** The current fork still contains upstream Linux code. It is not yet a Windows release.
 
+## Entry points
+
+- [Complete dated handoff (Korean)](../../HANDOFF_2026-10-17.md)
+- [Sanitized HID report fixtures](OBSERVED_REPORT_FIXTURES.md)
+
 ## Records in this folder
 
 - [PROJECT_BRIEF.md](PROJECT_BRIEF.md) — product goal, boundaries, and upstream relationship
