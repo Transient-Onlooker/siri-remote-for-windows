@@ -117,6 +117,26 @@ jobs:
             $errors | ForEach-Object { Write-Error $_.ToString() }
             exit 1
           }
+      - name: Parse A2854 home lab and guarded WPP scripts
+        shell: pwsh
+        run: |
+          foreach ($name in @('a2854_home_lab.ps1', 'a2854_wpp.ps1')) {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              (Join-Path $pwd "tools/windows-probe/$name"),
+              [ref]$tokens, [ref]$errors
+            ) | Out-Null
+            if ($errors.Count -gt 0) {
+              $errors | ForEach-Object { Write-Error $_.ToString() }
+              exit 1
+            }
+          }
+          Write-Host "Both A2854 lab script syntaxes valid"
+      - name: A2854 WPP read-only preflight smoke test
+        shell: pwsh
+        run: |
+          powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File tools/windows-probe/a2854_wpp.ps1 -Mode Check
       - name: Import Windows APIs and display CLI help
         shell: pwsh
         run: |
