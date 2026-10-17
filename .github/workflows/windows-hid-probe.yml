@@ -29,6 +29,24 @@ jobs:
           python -m unittest discover -s tools/windows-probe -v
           python -m compileall -q tools/protocol
           python -m unittest discover -s tools/protocol -v
+      - name: Independent HID parser comparison (synthetic, no private descriptor)
+        shell: pwsh
+        run: |
+          python -m pip install "hid-parser==0.1.0"
+          @'
+          import sys
+          sys.path.insert(0, "tools/protocol")
+          from test_descriptor_variants import synthetic_descriptor
+          from descriptor_variants import make_variants
+          from third_party_variant_check import check
+          from hid_parser import ReportDescriptor
+          # Verify the external parser can process a conventional valid report.
+          ReportDescriptor(list(bytes.fromhex("05 01 09 02 A1 01 09 30 15 00 25 7F 75 08 95 01 81 02 C0")))
+          for name, binary in make_variants(synthetic_descriptor()).items():
+              result, detail = check(binary)
+              print(f"synthetic/{name}: {result}; {detail}")
+          print("CI results are NOT Windows HIDCLASS acceptance tests.")
+          '@ | python -
       - name: Parse bounded HIDCLASS ETW capture script
         shell: pwsh
         run: |
