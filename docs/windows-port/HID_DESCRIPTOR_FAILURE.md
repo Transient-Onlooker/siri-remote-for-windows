@@ -238,6 +238,24 @@ According to [Microsoft's HID troubleshooting guide](https://learn.microsoft.com
 
 Do not upload raw ETL traces, SetupAPI logs, or Windows instance paths publicly without redaction; they may contain unique Bluetooth addresses and other identifiers. The next step is deciding whether a supported HIDCLASS trace is available or whether the **actual Report Map `0x2A4B`** must be captured again from Linux following an explicitly user-approved, disruptive re-pair.
 
+## 2026-10-17 HIDCLASS ETW capability inventory (actual Windows)
+
+The owner inspected Windows trace providers with `logman query providers` and found the **manifested** `Microsoft-Windows-Input-HIDCLASS` provider (GUID `{6465DA78-E7A0-4F39-B084-8F53C7C30DC6}`). Other registered providers include Bluetooth Bthmini and BthLEPrepairing. `Get-WinEvent -ListLog '*HID*'` showed one enabled channel, `Microsoft-Windows-hidcfu/Operational`, with **zero records**. The `hidcfu` channel is not the HIDCLASS driver-start trace and zero records there do **not** contradict the observed `mshidumdf` Code 10.
+
+Microsoft [HID over I2C troubleshooting](https://learn.microsoft.com/en-us/windows-hardware/drivers/hid/troubleshoot-hid-over-i2c-device-issues) identifies manifested HIDCLASS ETW events with provider name `Microsoft-Windows-Input-HIDCLASS`. The [HID event tracing guidance](https://learn.microsoft.com/en-us/windows-hardware/drivers/hid/event-tracing) explains `logman` collection for ETW and separately documents WPP tracing. **Do not conflate the HIDCLASS manifest ETW provider with WPP parser-trace capture**: manifested events alone may not include an erroneous descriptor byte offset, and the Microsoft example's transport is I2C rather than Bluetooth LE.
+
+Next diagnostic after **explicitly starting** a temporary ETW session in elevated Windows PowerShell:
+
+```powershell
+# Read-only provider metadata and declared event IDs; no trace started here.
+logman query providers Microsoft-Windows-Input-HIDCLASS
+$p = Get-WinEvent -ListProvider Microsoft-Windows-Input-HIDCLASS
+$p | Select-Object Name, Id
+$p.Events | Group-Object Id | Select-Object -First 20 Name, Count
+```
+
+If event schemas look potentially informative, create a separate short trace around a **user-initiated** Windows reconnect or device rescan. Do not equate an empty trace with missing driver events because the failed HID device must actually initiate operations while tracing. No registry modifications, driver removal/reinstallation, device re-pairing, or direct transport bypass is required for provider inspection.
+
 ## Alternative research branch
 
 If reusing BlueZ is impractical, check Windows driver diagnostic providers and HIDCLASS ETW/WPP availability without touching live driver bindings, before any trace capture. Raw traces may contain addresses/serials; do **not** upload raw ETL or setupapi.dev.log publicly without redaction. Whatever the approach, first validate the descriptor hypothesis before attempting a virtual HID or proprietary transport workaround.
