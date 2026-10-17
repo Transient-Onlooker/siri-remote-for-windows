@@ -40,6 +40,9 @@ jobs:
       - name: Test PnP quick mode and bounded detail lookups
         shell: pwsh
         run: powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File tools/windows-probe/test_pnp_probe.ps1
+      - name: Test PnP parent/container association (mocked hardware)
+        shell: pwsh
+        run: powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File tools/windows-probe/test_pnp_correlate.ps1
       - name: Check native PowerShell PnP read-only diagnostics
         shell: pwsh
         timeout-minutes: 2
