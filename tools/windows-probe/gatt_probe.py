@@ -44,7 +44,7 @@ def runtime_modules():
 
 async def list_paired(BluetoothLEDevice, DeviceInformation) -> list[Candidate]:
     selector = BluetoothLEDevice.get_device_selector_from_pairing_state(True)
-    devices = await DeviceInformation.find_all_async(selector)
+    devices = await DeviceInformation.find_all_async_aqs_filter(selector)
     candidates = [Candidate(name=d.name or "(unnamed BLE)", device_id=d.id) for d in devices]
     candidates.sort(key=lambda d: d.name.lower())
     return candidates
