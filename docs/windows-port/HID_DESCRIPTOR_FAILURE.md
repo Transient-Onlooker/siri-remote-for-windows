@@ -435,6 +435,32 @@ py -3 tools\protocol\report_map.py --inspect "$env:TEMP\a2854_hidclass_report_ma
 
 The inspector reports length, hash, report IDs, and *basic* HID item/collection warnings. It does **not** fully reproduce Windows HIDCLASS's parser nor prove USB/BLE HID compliance. Investigate the inspector output before any further tracing or re-pairing. Keep descriptor binary off public GitHub until reviewed.
 
+## 2026-10-17 first offline analysis of captured A2854 38-byte HIDCLASS descriptor
+
+The owner inspected locally extracted `%TEMP%\a2854_hidclass_report_map.bin` with `tools/protocol/report_map.py --inspect`. Observed:
+
+```text
+Report Map length: 38 bytes
+SHA-256: 6f9795ae87c7bcfcba0d50c38cbde6abf5163f78e1299cc23dc110795bc57f49
+Report IDs declared: 0x04, 0xB8
+Maximum collection depth: 1
+HID item count: 16
+No BASIC item-boundary/collection problems found.
+```
+
+The existing **basic** structural inspector found no obvious item-overrun, unclosed Collection, or invalid Report ID zero. This **does not validate HID parser semantics**: Windows still reports `mshidumdf` Code 10 and exact-attributed HIDCLASS `DeviceStartStatus=0xC00000B9`.
+
+Worth following up: the captured 38-byte HIDCLASS descriptor declares IDs `0x04` and `0xB8`, whereas previous **Linux observed input** involved reports `0xFB` (buttons) and `0xFC` (touch) after enabling input. The discrepancy is a **hypothesis-generating observation only**; HIDCLASS may have captured an alternate collection/representation or a subset, and GATT characteristic Report Reference IDs differ from report-map contents. Do not assert report-map truncation or corruption merely because IDs differ.
+
+The next minimal offline diagnostic is to examine the 38 bytes locally, ideally printing only the compact hex sequence (no device path or MAC):
+
+```powershell
+cd "C:\Users\무조림.000\Desktop\코딩\01_working\siri-remote-for-windows"
+py -3 -c "import os,pathlib; b=(pathlib.Path(os.environ['TEMP'])/'a2854_hidclass_report_map.bin').read_bytes(); print(' '.join(f'{x:02X}' for x in b))"
+```
+
+Determine exact HID item semantics (Usage Page/Usage, collection, Report Size/Count, Input/Output/Feature) from the actual sequence. Microsoft [HidP_GetCollectionDescription](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/hidpddi/nf-hidpddi-hidp_getcollectiondescription) documents `STATUS_COULD_NOT_INTERPRET` as a possible descriptor parsing error, but ETW's status does not yet pinpoint a specific offending item.
+
 ## Alternative research branch
 
 If reusing BlueZ is impractical, check Windows driver diagnostic providers and HIDCLASS ETW/WPP availability without touching live driver bindings, before any trace capture. Raw traces may contain addresses/serials; do **not** upload raw ETL or setupapi.dev.log publicly without redaction. Whatever the approach, first validate the descriptor hypothesis before attempting a virtual HID or proprietary transport workaround.
