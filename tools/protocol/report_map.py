@@ -362,6 +362,8 @@ async def read_connected_map(
                 "connected": False, "resolved": False,
                 "hid_services": 0, "map_chars": 0, "report_chars": 0
             }
+            samples = {"total": 0, "connected": 0, "resolved": 0}
+            last_state = {"connected": False, "resolved": False}
             # Do not WAIT for Connect() to complete before watching GATT:
             # previously, a transient connection could appear and disappear
             # during the 15s wait and be missed entirely by the snapshots.
@@ -374,6 +376,10 @@ async def read_connected_map(
             while loop.time() - started < 19.0:
                 objects = await snapshot()
                 current = remote_gatt_state(objects, target)
+                samples["total"] += 1
+                samples["connected"] += int(current["connected"])
+                samples["resolved"] += int(current["resolved"])
+                last_state = current
                 ever["connected"] |= current["connected"]
                 ever["resolved"] |= current["resolved"]
                 for name in ("hid_services", "map_chars", "report_chars"):
@@ -408,6 +414,8 @@ async def read_connected_map(
                 f"Attempt {attempt} diagnostic: Connect={connect_status}; "
                 f"seen Connected={ever['connected']}, "
                 f"ServicesResolved={ever['resolved']}; "
+                f"connected samples={samples['connected']}/{samples['total']}, "
+                f"final Connected={last_state['connected']}; "
                 f"HID service count={ever['hid_services']}, "
                 f"Report Map 0x2A4B count={ever['map_chars']}, "
                 f"Report characteristic 0x2A4D count={ever['report_chars']}; "
