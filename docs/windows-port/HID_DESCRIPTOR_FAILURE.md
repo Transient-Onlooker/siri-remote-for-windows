@@ -256,6 +256,31 @@ $p.Events | Group-Object Id | Select-Object -First 20 Name, Count
 
 If event schemas look potentially informative, create a separate short trace around a **user-initiated** Windows reconnect or device rescan. Do not equate an empty trace with missing driver events because the failed HID device must actually initiate operations while tracing. No registry modifications, driver removal/reinstallation, device re-pairing, or direct transport bypass is required for provider inspection.
 
+## Confirmed manifested HIDCLASS ETW event catalog (Windows 2026-10-17)
+
+The physical Windows computer reported:
+
+- Provider: `Microsoft-Windows-Input-HIDCLASS` `{6465DA78-E7A0-4F39-B084-8F53C7C30DC6}`
+- Provider keywords: `Default=0x1`, `Microsoft-Windows-Input-HIDCLASS-Analytic=0x8000000000000000`
+- `logman` lists level `Informational=4`
+- `Get-WinEvent -ListProvider` declares **5 event templates**: ID 1 v0, ID 2 v0, and ID 3 v0/v1/v2.
+- These are **declarations**, not evidence that any corresponding event has yet been emitted for Siri Remote; event meanings/payload schemas were not captured.
+
+A [bounded ETW collector](../../tools/windows-probe/hidclass_trace.ps1) is available, using only the manifested HIDCLASS provider. It runs for 5–60 seconds (default 20), starts a private ETW trace with keywords `0x8000000000000001` and level 4, and stops it in `finally`. It does not re-pair, restart PnP nodes, install drivers, or change the adapter.
+
+**Run from elevated Windows PowerShell**; where the local worktree has modifications blocking a pull, retrieve only the fresh script:
+
+```powershell
+git fetch origin main
+git show origin/main:tools/windows-probe/hidclass_trace.ps1 |
+    Set-Content "$env:TEMP\hidclass_trace.ps1" -Encoding UTF8
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:TEMP\hidclass_trace.ps1" -Seconds 20
+```
+
+During that 20-second window touch/press buttons on the Siri Remote. The script **never prints raw event bodies**, only event ID, version and count; the raw ETL stays in the local `%TEMP%` directory and **must not be published**. An empty trace **does not** prove absence of a parser error, because already-failed Code 10 PnP nodes may not re-run driver initialization on ordinary BLE activity. Any future PnP-node restart / driver re-enumeration to reproduce Code 10 should be intentional and limited to the correct A2854 node, never the shared Intel AX200 adapter or the paired keyboard. Users reliant on Bluetooth keyboard/mouse should not toggle the host adapter for this experiment.
+
+Sources: [Windows ETW tracing](https://learn.microsoft.com/en-us/windows-hardware/drivers/hid/event-tracing), [HIDCLASS manifested ETW trace](https://learn.microsoft.com/en-us/windows-hardware/drivers/hid/troubleshoot-hid-over-i2c-device-issues), [HidP_GetCollectionDescription error possibilities](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/hidpddi/nf-hidpddi-hidp_getcollectiondescription).
+
 ## Alternative research branch
 
 If reusing BlueZ is impractical, check Windows driver diagnostic providers and HIDCLASS ETW/WPP availability without touching live driver bindings, before any trace capture. Raw traces may contain addresses/serials; do **not** upload raw ETL or setupapi.dev.log publicly without redaction. Whatever the approach, first validate the descriptor hypothesis before attempting a virtual HID or proprietary transport workaround.
