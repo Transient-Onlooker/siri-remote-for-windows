@@ -30,5 +30,5 @@ jobs:
         shell: pwsh
         run: |
           python -m pip install "bleak>=2,<4"
-          python -c "from winrt.windows.devices.bluetooth import BluetoothLEDevice, BluetoothCacheMode; from winrt.windows.devices.enumeration import DeviceInformation; print('WinRT imports OK')"
+          python -c "from winrt.windows.devices.bluetooth import BluetoothLEDevice, BluetoothCacheMode; from winrt.windows.devices.enumeration import DeviceInformation; assert hasattr(DeviceInformation, 'find_all_async_aqs_filter'); assert hasattr(BluetoothLEDevice, 'get_device_selector_from_pairing_state'); print('WinRT AQS overloads OK')"
       # Physical BLE adapter/remote is not available on CI runners.
