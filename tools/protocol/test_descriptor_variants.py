@@ -32,8 +32,9 @@ class DescriptorVariantTests(unittest.TestCase):
         variants = make_variants(original)
         self.assertEqual(
             set(variants),
-            {"original", "add_input_usage", "feature_25x12",
-             "usage_and_25x12", "unbuffered_input"},
+            {"original", "single_input_usage", "input_usage_range",
+             "feature_25x12", "range_and_25x12", "unbuffered_input",
+             "range_and_unbuffered", "range_25x12_unbuffered"},
         )
         self.assertEqual(variants["original"], original)
         for name, raw in variants.items():
@@ -49,7 +50,7 @@ class DescriptorVariantTests(unittest.TestCase):
     def test_usage_fix_only_clears_missing_usage_flag(self):
         before = inspect_semantics(synthetic_descriptor())["issues"]
         after = inspect_semantics(
-            make_variants(synthetic_descriptor())["add_input_usage"])["issues"]
+            make_variants(synthetic_descriptor())["input_usage_range"])["issues"]
         self.assertIn("data_variable_input_without_local_usage", before)
         self.assertNotIn("data_variable_input_without_local_usage", after)
         self.assertIn("field_width_over_32_bits", after)
@@ -66,10 +67,12 @@ class DescriptorVariantTests(unittest.TestCase):
 
     def test_combined_fixes_and_buffered_control(self):
         variants = make_variants(synthetic_descriptor())
-        combined = inspect_semantics(variants["usage_and_25x12"])
+        combined = inspect_semantics(variants["range_and_25x12"])
         self.assertEqual(combined["issues"], ["buffered_bytes_input"])
         clear_buffer = inspect_semantics(variants["unbuffered_input"])
         self.assertNotIn("buffered_bytes_input", clear_buffer["issues"])
+        all_three = inspect_semantics(variants["range_25x12_unbuffered"])
+        self.assertEqual(all_three["issues"], [])
         self.assertIn("data_variable_input_without_local_usage", clear_buffer["issues"])
 
     def test_reject_unrelated_and_corrupted_inputs(self):
@@ -89,7 +92,7 @@ class DescriptorVariantTests(unittest.TestCase):
             output = io.StringIO()
             with contextlib.redirect_stdout(output):
                 emit_files(variants, dest)
-            self.assertEqual(len(list(dest.glob("*.bin"))), 5)
+            self.assertEqual(len(list(dest.glob("*.bin"))), 8)
             self.assertEqual((dest / "original.bin").read_bytes(),
                              synthetic_descriptor())
             self.assertNotIn("06 00", output.getvalue())
