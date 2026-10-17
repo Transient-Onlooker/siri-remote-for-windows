@@ -131,6 +131,21 @@ python3 /tmp/bluez_journal.py --minutes 60
 
 This emits only generic failure categories and short numeric codes, **not raw journal messages, addresses, serials or D-Bus paths**. If no event is found, BlueZ could be running without detailed debug logs. Do not restart the controller or repeat pairing solely based on an unresolved GATT state.
 
+## Journal from actual WSL session (2026-10-17)
+
+The user read 60 minutes of `bluetoothd` journal twice (ordinary user and `sudo`), with identical results: **17** total lines, **4** broadly GATT/service-tagged, **8** other Bluetooth-failure-tagged, **no parsed numeric status code**. This is **not an evidence-backed classification of 12 actual errors** because the original keyword-based classifier includes informational messages containing `service` or `gatt`. Equality with `sudo` means permissions did not account for the missing detail in this window.
+
+An enhanced [privacy-safe diagnostic](../../tools/protocol/bluez_journal.py) supports `--detail` to print chronological line numbers and allowlisted operation/outcome fingerprints, and `--kernel` to examine the kernel HCI/USB journal separately. Neither mode emits raw BlueZ messages or identifiers. These fingerprints are only approximate; they are not guaranteed to come from the A2854 device.
+
+```bash
+git fetch origin main
+git show origin/main:tools/protocol/bluez_journal.py > /tmp/bluez_journal.py
+python3 /tmp/bluez_journal.py --minutes 120 --detail
+python3 /tmp/bluez_journal.py --minutes 120 --detail --kernel
+```
+
+An important alternative hypothesis is stale bond credentials: the **same physical Intel AX200** controller was used to pair this remote under both native Windows and WSL BlueZ. The `Paired: yes` flag reflects local stored credentials, not necessarily the remote still accepting those credentials after any subsequent Windows pairing. However, the current evidence does **not** establish key mismatch. Look for safe authentication/encryption/GATT failure indicators in logs before considering any re-pairing, which could disrupt the working Windows bond. Do not erase either OS's bonding database as a first step.
+
 ## Alternative research branch
 
 If reusing BlueZ is impractical, check Windows driver diagnostic providers and HIDCLASS ETW/WPP availability without touching live driver bindings, before any trace capture. Raw traces may contain addresses/serials; do **not** upload raw ETL or setupapi.dev.log publicly without redaction. Whatever the approach, first validate the descriptor hypothesis before attempting a virtual HID or proprietary transport workaround.
