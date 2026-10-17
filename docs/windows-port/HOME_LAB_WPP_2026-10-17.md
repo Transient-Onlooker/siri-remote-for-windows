@@ -127,3 +127,29 @@ Microsoft 공식 BusesTrace.cmd는 WPR 수집 이외에도 UMDF 진단 관련 �
 - [Microsoft 공식 BusesAllProfile.wprp 원본](https://github.com/microsoft/busiotools/blob/f9c6f70775276c1b82c3541317820b489e59a9f9/usb/tracing/BusesAllProfile.wprp)
 - [Microsoft WPR CLI 문서](https://learn.microsoft.com/en-us/windows-hardware/test/wpt/wpr-command-line-options)
 - [HidP_GetCollectionDescription 문서](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/hidpddi/nf-hidpddi-hidp_getcollectiondescription)
+
+
+## 2026-10-17: WPA shows Generic Events, but HIDCLASS WPP graph missing
+
+The owner opened the 10.38 MiB \`a2854_wpp_*.etl\` in WPA; Graph Explorer search for WPP Trace returned no matching graph and the visible Generic Events table showed only ImageId/EventMetadata/EventTrace/WinSATAssessment aggregate rows.
+
+A first PowerShell attempt to inspect the same ETL used \`Get-WinEvent -Path ... -Oldest\` and returned exactly **93,075 records**, **but all 93,075 displayed ProviderName values were empty**. Consequently grouping ProviderName yielded one blank row and comparing the provider ID with the two expected HIDCLASS GUIDs returned 0 each. **These zeroes alone do NOT prove the ETL contains no HIDCLASS events**: WPP event payload/metadata decoding differs from normal manifested ETW and commonly needs PDB/TMF. See [Microsoft event metadata overview](https://learn.microsoft.com/en-us/windows/win32/etw/event-metadata-overview).
+
+**Next read-only discriminating experiment:** use \`tracerpt\` to summarize raw ETL provider GUIDs and counts. \`tracerpt\` is included with Windows and produces an aggregate event count per provider even where \`Get-WinEvent\` cannot decode a provider name. This experiment must never require a new trace/re-pair:
+
+~~~powershell
+cd "C:\Users\무조림.000\Desktop\코딩\01_working\siri-remote-for-windows"
+git fetch origin main
+git show origin/main:tools/windows-probe/a2854_etl_provider_audit.ps1 |
+    Set-Content "$env:TEMP\a2854_etl_provider_audit.ps1" -Encoding UTF8
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:TEMP\a2854_etl_provider_audit.ps1"
+~~~
+
+The script prints **ONLY** total event counts and aggregated matches against:
+- HIDCLASS WPP GUID: 47c779cd-4efd-49d7-9b10-9f16e5c25d06
+- HIDCLASS manifested ETW GUID: 6465DA78-E7A0-4F39-B084-8F53C7C30DC6
+
+**Important privacy qualification:** Windows tracerpt may produce a full raw XML event dump; the script directs this to a uniquely named private TEMP subdirectory and deletes it using best-effort cleanup after counting. The saved original ETL is untouched. Do not share these raw files, but console summary counts are suitable for discussion. A matching GUID in the raw event summary proves events exist but does not guarantee message decoding in WPA; no matches makes the capture/provider-enablement path the next area for investigation (not an excuse to blindly repeat the capture).
+
+The owner restored the local shell TEMP/TMP variables from a former \`C:\Isaac\tmp\` AI training scratch location to normal user \`C:\Users\무조림.000\AppData\Local\Temp\`, and copied the 10.38MiB WPP ETL and 38-byte HID descriptor into the normal TEMP. No fresh trace capture was necessary.
+
