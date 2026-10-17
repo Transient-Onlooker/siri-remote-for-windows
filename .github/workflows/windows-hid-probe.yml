@@ -11,11 +11,15 @@ on:
 jobs:
   probe-smoke:
     runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.11', '3.13']
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: ${{ matrix.python-version }}
       - name: Compile and run pure HID decoder fixtures
         shell: pwsh
         run: |
