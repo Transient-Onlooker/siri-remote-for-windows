@@ -281,6 +281,35 @@ During that 20-second window touch/press buttons on the Siri Remote. The script 
 
 Sources: [Windows ETW tracing](https://learn.microsoft.com/en-us/windows-hardware/drivers/hid/event-tracing), [HIDCLASS manifested ETW trace](https://learn.microsoft.com/en-us/windows-hardware/drivers/hid/troubleshoot-hid-over-i2c-device-issues), [HidP_GetCollectionDescription error possibilities](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/hidpddi/nf-hidpddi-hidp_getcollectiondescription).
 
+## 2026-10-17 Actual HIDCLASS ETW events captured
+
+The first 20-second manifested HIDCLASS trace on the physical Windows machine **succeeded** while the user pressed the Siri Remote's Back/TV/touchpad:
+
+```text
+HIDCLASS ETW started for up to 20 seconds.
+HIDCLASS events found: 12
+EventId Version Count
+1       0       1
+2       0       1
+3       2      10
+```
+
+**This proves the provider emitted records during the observation window**, not that those records originated on the Siri Remote or that any were errors. Other HID devices were present. The event descriptions/payloads have not been inspected yet. Avoid inferring descriptor corruption or event meanings solely from these event IDs.
+
+A new **read-only metadata-only** inspector [`tools/windows-probe/hidclass_trace_inspect.ps1`](../../tools/windows-probe/hidclass_trace_inspect.ps1) locates the newest `siri_hidclass_*.etl` in local `%TEMP%`, reports static provider event schema field **names/types** and each observed event's relative time, numeric task/opcode/level, ID/version. It never outputs any per-event data field value, event message/XML, device paths, addresses or ETL filename.
+
+Run in administrator PowerShell (same Windows account whose TEMP contains the trace):
+
+```powershell
+cd "C:\Users\무조림.000\Desktop\코딩\01_working\siri-remote-for-windows"
+git fetch origin main
+git show origin/main:tools/windows-probe/hidclass_trace_inspect.ps1 |
+    Set-Content "$env:TEMP\hidclass_trace_inspect.ps1" -Encoding UTF8
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:TEMP\hidclass_trace_inspect.ps1"
+```
+
+The next step after schema inspection is to decide whether **specific safe numeric error/status/offset fields** can be extracted and whether the events can be correlated to the known broken Siri Remote PnP HID node **without printing or publishing unique instance paths**. Do not re-pair or reset Bluetooth based on the 12-event count alone.
+
 ## Alternative research branch
 
 If reusing BlueZ is impractical, check Windows driver diagnostic providers and HIDCLASS ETW/WPP availability without touching live driver bindings, before any trace capture. Raw traces may contain addresses/serials; do **not** upload raw ETL or setupapi.dev.log publicly without redaction. Whatever the approach, first validate the descriptor hypothesis before attempting a virtual HID or proprietary transport workaround.
