@@ -1,10 +1,10 @@
 > **FORK-SPECIFIC HANDOFF — mandatory reading before future code edits:** [HANDOFF_2026-10-17.md](HANDOFF_2026-10-17.md), [docs/windows-port/NEXT_STEPS.md](docs/windows-port/NEXT_STEPS.md).
 >
-> - As of 2026-10-17 the project is **paused**. Existing source is the **Linux upstream**, not a Windows-native working product; do not present it as such.
+> - As of 2026-10-17 work resumed with a read-only Windows HID capability probe in `tools/windows-probe/` (no Windows hardware validation yet). Existing source is the **Linux upstream**, not a Windows-native working product; do not present it as such.
 > - Product goal: normal **Windows Bluetooth** A2854 mouse/media control; no WSL2, usbipd, BlueZ, PipeWire or Linux host during use.
 > - Prove real Windows HID report accessibility before rewriting transport. If HID device access fails, separately test WinRT GATT; account for repeated `0x2A4D` Report characteristics and Report Reference descriptors. Never infer HID access from pairing success alone.
 > - Reuse pure Rust `src/decoder.rs` algorithms / test vectors, not Linux transport or uinput as Windows runtime. Keep GPL-3.0 + author credits, and never publish unique physical remote identifiers.
-> - Do not silently alter code while performing a documentation-only handoff. The Windows implementation, native pairing and input mapping remain **not implemented/verified**.
+> - Do not silently alter code while performing a documentation-only handoff. The Windows application, native pairing and input mapping remain **not implemented/verified**. The standalone Python probe is a diagnostic, not the finished application.
 >
 # Repository Guidelines
 
