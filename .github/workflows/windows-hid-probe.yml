@@ -120,7 +120,7 @@ jobs:
       - name: Parse A2854 home lab and guarded WPP scripts
         shell: pwsh
         run: |
-          foreach ($name in @('a2854_home_lab.ps1', 'a2854_wpp.ps1', 'a2854_wpp_review.ps1')) {
+          foreach ($name in @('a2854_home_lab.ps1', 'a2854_wpp.ps1', 'a2854_wpp_review.ps1', 'a2854_etl_provider_audit.ps1')) {
             $tokens = $null
             $errors = $null
             [System.Management.Automation.Language.Parser]::ParseFile(
