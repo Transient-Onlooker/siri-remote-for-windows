@@ -124,8 +124,8 @@ switch ($Stage) {
         if ($LASTEXITCODE -ne 0) { throw 'Offline alignment experiment failed.' }
 
         Write-Output '--- PHASE 3: independent Python HID parser (offline when installed) ---'
-        & py.exe -3 -c 'import hid_parser' 2>$null | Out-Null
-        if ($LASTEXITCODE -eq 0) {
+        $optionalParser = (& py.exe -3 -c 'import importlib.util; print("present" if importlib.util.find_spec("hid_parser") else "missing")') -join ''
+        if ($LASTEXITCODE -eq 0 -and $optionalParser -eq 'present') {
             & py.exe -3 $independent --input $privateInput
             if ($LASTEXITCODE -ne 0) { throw 'Independent HID parser failed.' }
         } else {
