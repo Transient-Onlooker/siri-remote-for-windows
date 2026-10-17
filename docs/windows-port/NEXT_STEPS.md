@@ -13,7 +13,9 @@
 ## Phase 1 — Windows capability proof [not started]
 
 - [ ] Return Intel AX200 from USB/IP to Windows, confirm normal Bluetooth works.
-- [ ] Pair/recognize A2854 in Windows; capture sanitized diagnostics.
+- [~] A2854 reportedly pairs in Windows and briefly shows battery level, then disconnects; Windows name begins `DL1` (suffix not recorded). Physical GATT/HID access remains unknown.
+- [x] Add a [paired-device WinRT GATT probe](../../tools/windows-probe/GATT_DIAGNOSTICS.md) to distinguish service visibility, `0x1812` access, and GATT errors (code only).
+- [ ] Run WinRT GATT diagnostics on the paired A2854 and capture sanitized results.
 - [x] Add Windows CI smoke job for Python imports/help and offline fixture tests — [run 38997823005 passed](https://github.com/Transient-Onlooker/siri-remote-for-windows/actions/runs/38997823005). This **does not** confirm actual HID enumeration or A2854 input access.
 - [x] Implement read-only HID interface enumerator, `ReadFile` probe and sanitized 0xFB/0xFC fixture tests (code only).
 - [ ] **On Windows hardware:** run enumerator and verify actual HID report reads.
