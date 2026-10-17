@@ -213,8 +213,8 @@ if (-not $SaveBinary) {
 }
 $destination = Join-Path ([IO.Path]::GetTempPath()) $binaryName
 try {
-    $stream = New-Object IO.FileStream(
-        $destination,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None
+    $stream = [System.IO.File]::Open(
+        $destination, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None
     )
     try { $stream.Write($bytes,0,$bytes.Length) } finally { $stream.Dispose() }
     Write-Output ("Saved validated local binary under TEMP as {0}" -f $binaryName)
