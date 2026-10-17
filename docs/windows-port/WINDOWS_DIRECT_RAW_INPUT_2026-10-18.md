@@ -21,12 +21,14 @@ git show origin/main:tools/windows-probe/a2854_winrt_input.py |
 # gatt_probe.py는 이전에 이미 사용한 동일한 API 선택 도우미
 git show origin/main:tools/windows-probe/gatt_probe.py |
     Set-Content "$env:TEMP\gatt_probe.py" -Encoding UTF8
+git show origin/main:tools/windows-probe/adv_probe.py |
+    Set-Content "$env:TEMP\adv_probe.py" -Encoding UTF8
 
 # 설치돼 있지 않은 경우에만 (Python용 Windows BLE WinRT 바인딩)
 py -3 -m pip install "bleak>=2,<4"
 
 # 먼저 페어링된 DL1 장치 하나만 찾아서 25초 동안 입력 알림 구독 시도
-py -3 "$env:TEMP\a2854_winrt_input.py" --seconds 25
+py -3 "$env:TEMP\a2854_winrt_input.py" --seconds 25 --scan-before 10 --attempts 3
 ~~~
 
 스크립트는 **이전에 페어링된 DL1 리모컨만** 사용한다. `GetGattServices(UNCACHED)`가 연결에 실패하면 리모컨을 한 번 눌러 깨우고 결과를 확인한다. 자동 재페어링/펌웨어 접근/드라이버 변경은 하지 않는다. 원시 Bluetooth 주소, 장치 instance path, 주변 기기 데이터를 출력하지 않는다.
@@ -83,3 +85,13 @@ py -3 "$env:TEMP\a2854_winrt_input.py" --seconds 25 --enable-input
 - [Bleak Windows WinRT HID GATT 제약](https://bleak.readthedocs.io/en/latest/_modules/bleak/backends/winrt/client.html)
 - [Chromium WinRT protected HID GATT](https://chromium.googlesource.com/chromium/src/+/HEAD/device/bluetooth/bluetooth_gatt_discoverer_winrt.cc)
 - [이전 원본 Report 샘플](OBSERVED_REPORT_FIXTURES.md)
+
+## 2026-10-18 on-host first raw-input attempt
+
+The user ran the initial direct WinRT tool with Bleak **3.0.2** and Python **3.13**; there were 2 paired BLE records, exactly 1 DL1 prefix match; `FromIdAsync` succeeded, but the **first and only uncached GetGattServices returned UNREACHABLE**. No HID characteristic discovery, notifications or Report Reference reads occurred in that attempt. The pre-existing failure of the target `mshidumdf` HID child (Code 10, `0xC00000B9`) is separate, independently observed evidence. Do not treat `UNREACHABLE` as proof the descriptor failed or WinRT denied HID service access in that particular attempt.
+
+To avoid repeatedly running single-shot tests, `a2854_winrt_input.py` now supports a **10s advertisement prescan** (via the existing non-writing `adv_probe.scan`) and at most **three fresh WinRT device objects**, retrying **only** service discovery `UNREACHABLE`, with a 5s gap. It must **not** automatically retry `ACCESS_DENIED`. Once GATT succeeds, it continues into Report Reference and possible 0xFB/0xFC notification subscription with no test HID driver installed. It never changes Bluetooth bonding or Windows drivers.
+
+A passive advertisement scan may wake nothing and is **not proof** of a matching advertisement identity; it merely precedes the bounded connect attempts. BLE disconnection, address rotation, system HID service ownership and device sleep remain separate hypotheses.
+
+If it reaches `WINDOWS_PROTECTED_HID_SERVICE` again, stop attempting direct WinRT access: Windows owns/restricts HID `0x1812` via its BLE HID stack. [Microsoft GattCommunicationStatus](https://learn.microsoft.com/en-us/uwp/api/windows.devices.bluetooth.genericattributeprofile.gattcommunicationstatus), [Bleak's 3.0.2 HID service AccessDenied behavior](https://bleak.readthedocs.io/en/latest/_modules/bleak/backends/winrt/client.html).
