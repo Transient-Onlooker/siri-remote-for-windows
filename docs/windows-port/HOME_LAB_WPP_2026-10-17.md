@@ -53,6 +53,34 @@ py -3 -m pip install "hid-parser==0.1.0"
 
 실행기는 origin/main의 필요한 파일만 TEMP로 가져오며 **git pull/reset, 다른 소스코드 덮어쓰기, 페어링 제거를 하지 않는다**. 확인된 원본 38바이트 SHA-256은 '6f9795ae87c7bcfcba0d50c38cbde6abf5163f78e1299cc23dc110795bc57f49'로 검증하며 해시가 다르면 중단한다.
 
+
+## Actual A2854 host experiment — confirmed 2026-10-17
+
+The owner ran all three phases in administrator Windows PowerShell on Windows build 26200. This is actual hardware evidence, **not** a CI simulation.
+
+- **Safe**: one Siri Remote-specific HID child still had \`mshidumdf\` Code 10 / \`0xC00000B9\`; the previously extracted 38-byte local descriptor matched its exact expected SHA-256.
+- Original static experiment: Feature report **300 bits**, Input **136 bits**, \`unaligned=1\`, \`missing_input_usage=1\`.
+- Adding a local Usage range alone: \`unaligned=1, missing_input_usage=0\`.
+- Adding 4-bit constant Feature padding alone: \`unaligned=0, missing_input_usage=1\`, Feature payload **304 bits**, still **38 bytes on wire** when rounded.
+- Usage + padding: \`unaligned=0, missing_input_usage=0\`. This **does not mean Windows would start it**.
+- The optional hid-parser availability check emitted a Python \`NameError\` because Windows PowerShell 5.1 stripped quoting from the Python \`-c\` inline expression. **Diagnostic script bug only**; the preceding offline analysis succeeded. Fixed in GitHub commit \`8380b638\` using a Python package list rather than nested inline quoting. No additional capture needed.
+- **PrepareWpp**: pinned official Microsoft input WPP XML downloaded, validated and saved locally.
+- **CaptureWpp**: exactly one uniquely matched Siri Remote Code-10 HID child restarted, \`pnputil\` exit code **0**; after restart the child **still** had Code 10 / \`0xC00000B9\`. **WPR stopped and wrote a 10.38 MiB local ETL**, proving the bounded trace collection itself succeeded. This is **not yet a confirmation that the trace contains a readable parser byte-offset message**.
+
+**Immediate next task is ANALYSIS, not collection.** Do NOT repeat WPR or re-pair. Read the existing trace using WPA. Helper in GitHub: \`tools/windows-probe/a2854_wpp_review.ps1\` locates the latest local ETL and opens it in WPA with \`-OpenWpa\`; it never prints raw ETL messages or identifies devices in CLI output.
+
+~~~powershell
+cd "C:\Users\무조림.000\Desktop\코딩\01_working\siri-remote-for-windows"
+git fetch origin main
+git show origin/main:tools/windows-probe/a2854_wpp_review.ps1 |
+    Set-Content "$env:TEMP\a2854_wpp_review.ps1" -Encoding UTF8
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:TEMP\a2854_wpp_review.ps1" -OpenWpa
+~~~
+
+In WPA: **System Activity > WPP Trace**, open **Trace > Load Symbols**, use the View Editor to display **GUID Name**, Level, and Message. The official pinned WPRP defines **HidClassWppVerbose** provider GUID \`47c779cd-4efd-49d7-9b10-9f16e5c25d06\`. Focus on **Error** level entries around the targeted PnP restart. **Record only** an error category, relevant byte offset, and status, with anything identifying devices, users, computer names, timestamps or other devices redacted. The correct diagnosis may be **no decoded HIDCLASS WPP parser messages**; this alone does not negate the previously proven manifested HIDCLASS \`0xC00000B9\`.
+
+The full trace is input-sensitive and must stay on the owner's PC. Do not post it or an unredacted WPA screenshot publicly. If WPA produces no WPP decoded message, STOP; the next controlled test should be an isolated **WDK HID virtual minidriver on a throwaway Windows VM**, comparing native Windows parser acceptance of the original, Usage-only, padding-only, and combined descriptors.
+
 ## 결과 해석과 중단 조건
 
 | 결과 | 의미 | 다음 조치 |
