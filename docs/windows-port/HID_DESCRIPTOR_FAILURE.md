@@ -87,6 +87,32 @@ python3 /tmp/a2854-report-map.py --name-prefix DL1 --connect --output a2854-repo
 
 If this shows `Connect=success` but `ServicesResolved=False`, focus on GATT discovery and BlueZ logs. If `ServicesResolved=True` but no HID service is visible, verify plugin configuration and HID ownership. If HID service/report characteristics are visible but Report Map count remains 0, check the device's actual GATT attribute set, rather than assuming the peripheral exposes `0x2A4B`. If a Report Map exists but read returns a non-success result, investigate ATT permissions/authorization and BlueZ behavior. Preserve all existing pairings.
 
+## 2026-10-17 BLE connection failure: corrected diagnostic method
+
+The user ran the updated `--connect` probe while pressing remote buttons. It selected exactly one existing bonded remote but reported:
+
+- Attempt 1: `Connect=timeout`, no observed Connected or ServicesResolved, no HID GATT tree, no report-map reads
+- Attempts 2-3: `Connect=Failed`, same absent observations
+
+**Important correction:** these results are not proof that an ACL link never formed. The program originally awaited `Connect()` for up to 15 seconds **before** starting to observe GATT states. A momentary link during that wait would be missed. Therefore `0x2A4B count=0` also does **not** establish that the device lacks the characteristic.
+
+The program is now revised to **launch D-Bus Connect asynchronously and observe `Connected`, `ServicesResolved`, HID `0x1812`, and Report Map `0x2A4B` concurrently**, allowing detection of a short connection even while `Connect()` remains pending.
+
+BlueZ's [bluetoothctl LE connection documentation](https://github.com/bluez/bluez/blob/master/doc/bluetoothctl.rst) states that an LE connect needs an active advertising report and can fail if no advertising report is seen before the timeout. The program now offers `--scan-before 8`, which temporarily invokes `Adapter1.StartDiscovery` on the existing adapter, observes **RSSI property updates for only the already paired remote**, releases its discovery session via `StopDiscovery`, and then tries the connection. No raw addresses or unrelated BLE devices are logged.
+
+A **zero** fresh RSSI update count is **inconclusive**; BlueZ can suppress signals or report a device using a changed resolvable private identity. A positive count establishes only that BlueZ observed an RSSI change for the stored remote object, not that a GATT or HID connection succeeded.
+
+Working-tree updates are blocked by unrelated local edits. Safely run the newest tracked script from a temporary path:
+
+```bash
+git fetch origin main
+git show origin/main:tools/protocol/report_map.py > /tmp/a2854-report-map.py
+python3 /tmp/a2854-report-map.py --name-prefix DL1 --connect \
+  --scan-before 8 --output a2854-report-map.bin
+```
+
+If this again fails, **stop reconnection attempts** and inspect only the local Bluetooth controller/power state and time-scoped HCI/BlueZ reason codes. Prefer a privacy-safe filtered diagnostic over copying raw journals that may reveal hardware addresses. Do not unpair, delete BlueZ cache, modify Apple TV pairings, or reinstall the Bluetooth driver based on this data alone.
+
 ## Alternative research branch
 
 If reusing BlueZ is impractical, check Windows driver diagnostic providers and HIDCLASS ETW/WPP availability without touching live driver bindings, before any trace capture. Raw traces may contain addresses/serials; do **not** upload raw ETL or setupapi.dev.log publicly without redaction. Whatever the approach, first validate the descriptor hypothesis before attempting a virtual HID or proprietary transport workaround.
