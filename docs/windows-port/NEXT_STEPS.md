@@ -14,7 +14,7 @@
 
 - [ ] Return Intel AX200 from USB/IP to Windows, confirm normal Bluetooth works.
 - [ ] Pair/recognize A2854 in Windows; capture sanitized diagnostics.
-- [x] Add Windows CI smoke job for Python imports/help and offline fixture tests (CI result not yet verified).
+- [x] Add Windows CI smoke job for Python imports/help and offline fixture tests — [run 38997823005 passed](https://github.com/Transient-Onlooker/siri-remote-for-windows/actions/runs/38997823005). This **does not** confirm actual HID enumeration or A2854 input access.
 - [x] Implement read-only HID interface enumerator, `ReadFile` probe and sanitized 0xFB/0xFC fixture tests (code only).
 - [ ] **On Windows hardware:** run enumerator and verify actual HID report reads.
 - [ ] Test GATT service visibility / report reference descriptors if HID fails.
