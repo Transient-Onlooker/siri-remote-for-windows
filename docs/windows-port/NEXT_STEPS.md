@@ -20,7 +20,8 @@
 - [x] Windows advertisement scan saw HID 0x1812 once among seven BLE identities (204 matching events; identity not conclusively attributed to remote).
 - [x] Next uncached GATT attempt succeeded: 7 services, connection `CONNECTED`, HID service 0x1812 found but characteristic discovery `ACCESS_DENIED`.
 - [x] Add `--hid-snapshot` to compare Windows HID interfaces before and during GATT access while keeping device paths private.
-- [ ] On Windows, run GATT `--hid-snapshot` and compare with original 20-interface baseline; inspect HIDClass/PnP enumeration if needed.
+- [x] Add optional pre-scan and capped retry on `UNREACHABLE` (max 3 attempts, 5-second intervals) with mock tests. Root cause remains unknown.
+- [ ] On Windows, run `gatt_probe.py --index 0 --hid-snapshot --scan-before 10 --attempts 3` to compare HID interfaces during a **successful** GATT connection; investigate PnP/HID driver binding if needed.
 - [x] Add Windows CI smoke job for Python imports/help and offline fixture tests — [run 38997823005 passed](https://github.com/Transient-Onlooker/siri-remote-for-windows/actions/runs/38997823005). This **does not** confirm actual HID enumeration or A2854 input access.
 - [x] Implement read-only HID interface enumerator, `ReadFile` probe and sanitized 0xFB/0xFC fixture tests (code only).
 - [ ] **On Windows hardware:** run enumerator and verify actual HID report reads.
