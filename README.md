@@ -1,3 +1,9 @@
+> **Latest checkpoint (2026-10-18): Windows work moved to the [AppleRemoteWin fork / feat/a2854-support](https://github.com/Transient-Onlooker/AppleRemoteWin/tree/feat/a2854-support).** The new .NET 10 A2854 decoder and diagnostic console **built successfully on the owner's Windows laptop and passed 89/89 tests**. Native A2854 input reception is **not yet demonstrated**; Intel AX200 is bound to BTHUSB, not WinUSB. A one-time, target-scoped HID Code-10 test script is **prepared but not hardware-run**. **[Current consolidated handoff (Korean)](HANDOFF_2026-10-18.md)** · [Full technical handoff](https://github.com/Transient-Onlooker/AppleRemoteWin/blob/feat/a2854-support/docs/HANDOFF_2026-10-18_A2854.md).
+>
+> Earlier 2026-10-17 checkpoint below is historical, not the current overall project status.
+>
+---
+
 > **Windows fork checkpoint (2026-10-17): documentation/handoff complete; Phase 1 Windows HID diagnostic probe added (not hardware-validated).**
 >
 > This fork targets a **native Windows Bluetooth mouse/media remote** for Siri Remote A2854, **without WSL, usbipd, or Linux at runtime**. The application source remains the upstream Linux CLI. Separate read-only Windows diagnostics now cover [HID interfaces](tools/windows-probe/README.md) and [paired BLE/WinRT GATT visibility](tools/windows-probe/GATT_DIAGNOSTICS.md); neither has been hardware-validated. Successful real-device Linux BLE/touch/button experiments **do not** imply native Windows support.
