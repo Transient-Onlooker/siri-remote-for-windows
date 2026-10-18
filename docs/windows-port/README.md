@@ -1,5 +1,10 @@
 # Windows-native Siri Remote — project handoff
 
+> **CURRENT (2026-10-18):** The next-stage A2854 Windows work now lives in [Transient-Onlooker/AppleRemoteWin, feat/a2854-support](https://github.com/Transient-Onlooker/AppleRemoteWin/tree/feat/a2854-support). The owner's .NET 10 tests passed **89/89**, and the independent Windows probe built. The probe cannot open the internal Intel AX200 while it is bound to `BTHUSB`; no native Windows A2854 event capture has been demonstrated. The built-in HID Code-10 last-attempt script is committed but **not yet run on hardware**. See [updated handoff for this repository](../../HANDOFF_2026-10-18.md) and [complete authoritative handoff in the new fork](https://github.com/Transient-Onlooker/AppleRemoteWin/blob/feat/a2854-support/docs/HANDOFF_2026-10-18_A2854.md).
+>
+> The 2026-10-17 notes below remain historical context and should not be treated as the latest status.
+
+
 **Status: RESTARTED (2026-10-17); read-only native Windows HID diagnostic implemented, real Windows device access not yet tested.**  
 **Device:** Apple TV Siri Remote (3rd generation, A2854)  
 **Upstream:** [azais-corentin/siri-remote](https://github.com/azais-corentin/siri-remote) · **Fork:** [Transient-Onlooker/siri-remote-for-windows](https://github.com/Transient-Onlooker/siri-remote-for-windows)
